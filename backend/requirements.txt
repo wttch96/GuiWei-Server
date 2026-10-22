@@ -1,0 +1,16 @@
+# Web
+Flask>=3.1
+Flask-Cors>=5.0
+Flask-SQLAlchemy>=3.1
+SQLAlchemy>=2.0
+PyJWT>=2.9
+python-dotenv>=1.0
+
+# 校验 / 图片
+pydantic>=2.9
+Pillow>=11.0
+requests>=2.32
+
+# LangChain + DeepSeek
+langchain-core>=0.3
+langchain-deepseek>=0.1
