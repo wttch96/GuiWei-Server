@@ -39,7 +39,7 @@ if [ ! -f ".env" ]; then
 fi
 
 echo
-echo "后端启动中：http://127.0.0.1:5000"
+echo "后端启动中：http://127.0.0.1:5555"
 echo "手机请访问前端：http://电脑局域网IP:5173（需与电脑同一 Wi-Fi）"
 echo "按 Ctrl+C 停止服务。"
 echo

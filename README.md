@@ -55,7 +55,7 @@ guiwei-server/
     │   ├── stores/         # Pinia（登录态）
     │   ├── views/          # 概览、房间、物品、AI、识图、日志...
     │   └── utils/          # 日期、状态、图片 URL
-    ├── vite.config.js      # 开发代理 /api → 127.0.0.1:5000
+    ├── vite.config.js      # 开发代理 /api → 127.0.0.1:5555
     └── package.json
 ```
 
@@ -92,7 +92,7 @@ pip install -r requirements.txt
 python run.py
 ```
 
-默认监听 `0.0.0.0:5000`（同一局域网内的手机也能访问），本机使用 `http://127.0.0.1:5000`。首次启动会自动建表，并按 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 创建管理员。仓库中若已存在本地生成的 `backend/.env`，默认账号为 `admin / admin123456`（仅用于本地开发，请登录后立即在右上角修改密码，或改 `.env` 后重新初始化）。
+默认监听 `0.0.0.0:5555`（同一局域网内的手机也能访问），本机使用 `http://127.0.0.1:5555`。首次启动会自动建表，并按 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 创建管理员。仓库中若已存在本地生成的 `backend/.env`，默认账号为 `admin / admin123456`（仅用于本地开发，请登录后立即在右上角修改密码，或改 `.env` 后重新初始化）。
 
 可选：写入演示数据（仅空库可用）。
 
@@ -108,7 +108,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:5173`，使用管理员账号登录。Vite 会把 `/api` 代理到 `http://127.0.0.1:5000`。
+打开 `http://localhost:5173`，使用管理员账号登录。Vite 会把 `/api` 代理到 `http://127.0.0.1:5555`。
 
 ### 3. 手机访问与拍照
 
@@ -123,14 +123,14 @@ npm run dev
 4. 拍照入口：
    - 「拍照识物」页点击「拍照」，手机会直接打开后置摄像头，拍完自动上传；已有照片时可点「重拍」。
    - 新增 / 编辑物品时，在照片区域点击「拍照」，现场拍摄后照片会随物品一起保存。
-5. 手机打不开时：确认在同一局域网；Windows 防火墙允许 Node.js / Python（或放行 `5173`、`5000` 端口）；关闭路由器的访客网络 / AP 隔离。
+5. 手机打不开时：确认在同一局域网；Windows 防火墙允许 Node.js / Python（或放行 `5173`、`5555` 端口）；关闭路由器的访客网络 / AP 隔离。
 
-安全提示：监听 `0.0.0.0` 适合家庭局域网调试，不要把 `5173` / `5000` 直接映射到公网。生产环境请使用 HTTPS、设置 `FLASK_DEBUG=false`，并修改默认密码与密钥。
+安全提示：监听 `0.0.0.0` 适合家庭局域网调试，不要把 `5173` / `5555` 直接映射到公网。生产环境请使用 HTTPS、设置 `FLASK_DEBUG=false`，并修改默认密码与密钥。
 
 ### 4. 验证
 
 ```bash
-curl http://127.0.0.1:5000/api/health
+curl http://127.0.0.1:5555/api/health
 # {"code":0,"message":"ok","data":{"status":"ok","database":"ok",...}}
 ```
 
@@ -152,7 +152,7 @@ curl http://127.0.0.1:5000/api/health
 | `AI_MAX_ITERATIONS` | 单轮对话最多工具调用轮数，默认 8 |
 | `VISION_API_BASE` / `VISION_API_KEY` / `VISION_MODEL` | 视觉识图覆盖项；默认复用 DeepSeek 的 Base/Key，模型为 `deepseek-flash` |
 | `AUTO_CREATE_DB` / `AUTO_BOOTSTRAP_ADMIN` | 启动时自动建表 / 建管理员 |
-| `FLASK_DEBUG` / `HOST` / `PORT` | 开发调试开关、监听地址与端口（`.env.example` 默认 `0.0.0.0:5000`，手机可经局域网访问；只想本机访问时改为 `127.0.0.1`） |
+| `FLASK_DEBUG` / `HOST` / `PORT` | 开发调试开关、监听地址与端口（`.env.example` 默认 `0.0.0.0:5555`，手机可经局域网访问；只想本机访问时改为 `127.0.0.1`） |
 | `SERVE_FRONTEND` | 由 Flask 托管 `frontend/dist`（单机部署用） |
 
 ### AI 对话
@@ -314,7 +314,7 @@ Authorization: Bearer <token>
 登录：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/api/auth/login \
+curl -X POST http://127.0.0.1:5555/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123456"}'
 ```
@@ -322,7 +322,7 @@ curl -X POST http://127.0.0.1:5000/api/auth/login \
 创建物品（可直接用名称解析房间、容器路径、分类和标签）：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/api/items \
+curl -X POST http://127.0.0.1:5555/api/items \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -338,7 +338,7 @@ curl -X POST http://127.0.0.1:5000/api/items \
 AI 对话：
 
 ```bash
-curl -X POST http://127.0.0.1:5000/api/ai/chat \
+curl -X POST http://127.0.0.1:5555/api/ai/chat \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"把电视遥控器放到卧室/衣柜/顶部收纳盒"}'
@@ -380,10 +380,10 @@ cd ../backend
 #   AUTO_CREATE_DB=false
 #   FLASK_DEBUG=false
 pip install waitress
-waitress-serve --host 0.0.0.0 --port 5000 run:app
+waitress-serve --host 0.0.0.0 --port 5555 run:app
 ```
 
-访问 `http://<服务器>:5000`。若部署在公网，请务必修改 `SECRET_KEY`、`JWT_SECRET` 与管理员密码，并在 HTTPS 反向代理后运行。
+访问 `http://<服务器>:5555`。若部署在公网，请务必修改 `SECRET_KEY`、`JWT_SECRET` 与管理员密码，并在 HTTPS 反向代理后运行。
 
 ### 前后端分开
 
