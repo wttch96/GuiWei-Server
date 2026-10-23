@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -47,6 +47,7 @@ const similarLoading = ref(false)
 const similarChecked = ref(false)
 const formRef = ref()
 const cameraInput = ref()
+const resultPanel = ref()
 let similarSeq = 0
 
 const form = reactive({
@@ -215,11 +216,19 @@ async function handleFile(file) {
     if (existing >= 0) recent.value.splice(existing, 1)
     recent.value.unshift(uploaded)
     ElMessage.success('照片已上传，点击「AI 识别」开始分析')
+    scrollToResult()
   } catch {
     // 请求层已提示错误
   } finally {
     uploading.value = false
   }
+}
+
+/** 手机上上传完成后直接滚到第 2 步，避免误以为还停在上传页。 */
+async function scrollToResult() {
+  if (!window.matchMedia('(max-width: 1024px)').matches) return
+  await nextTick()
+  resultPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function uploadRequest(options) {
@@ -344,7 +353,7 @@ onMounted(async () => {
     <div class="page-head">
       <div>
         <h1 class="page-title">拍照识物</h1>
-        <p class="page-sub">拍照后 AI 识别名称、分类与标签，并查找描述相近的已有物品</p>
+        <p class="page-sub">第 1 步上传照片，第 2 步确认识别结果并入库</p>
       </div>
       <el-tag
         v-if="visionStatus"
@@ -368,7 +377,7 @@ onMounted(async () => {
     <div class="recognize-grid">
       <section class="panel upload-panel">
         <div class="panel-head">
-          <span class="panel-title">1 · 上传照片</span>
+          <span class="panel-title"><em class="step">1</em>上传照片</span>
           <el-button
             v-if="photo"
             text
@@ -441,9 +450,9 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section class="panel result-panel">
+      <section ref="resultPanel" class="panel result-panel">
         <div class="panel-head">
-          <span class="panel-title">2 · 识别与入库</span>
+          <span class="panel-title"><em class="step">2</em>识别与入库</span>
           <el-button
             v-if="photo && !savedItem"
             type="primary"
@@ -733,6 +742,22 @@ onMounted(async () => {
 .upload-panel,
 .result-panel {
   min-height: 420px;
+  min-width: 0;
+}
+
+.step {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  vertical-align: 1px;
 }
 
 .uploader {
@@ -804,25 +829,35 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .preview {
   width: 100%;
+  max-width: 100%;
   height: 320px;
   border-radius: 14px;
   background: #f2f6f4;
   border: 1px solid var(--line);
 }
 
+.preview :deep(.el-image__inner) {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 .file-meta {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
   font-size: 11.5px;
   color: var(--muted);
 }
 
 .file-meta span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -832,6 +867,11 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
+}
+
+.preview-actions :deep(.el-button) {
+  margin-left: 0;
 }
 
 .ai-card {
@@ -884,6 +924,7 @@ onMounted(async () => {
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--ink-2);
+  overflow-wrap: anywhere;
 }
 
 .ai-tags {
@@ -896,6 +937,7 @@ onMounted(async () => {
   margin: 9px 0 0;
   font-size: 11.5px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .manual-tip {
@@ -910,6 +952,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding-top: 4px;
 }
@@ -1116,7 +1159,7 @@ onMounted(async () => {
 
 @media (max-width: 1024px) {
   .recognize-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .upload-panel,
   .result-panel {
@@ -1126,7 +1169,23 @@ onMounted(async () => {
 
 @media (max-width: 640px) {
   .similar-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 图片按容器宽度等比缩放，避免大图把页面撑出横向滚动 */
+  .preview {
+    height: auto;
+    aspect-ratio: 4 / 3;
+    max-height: 58vh;
+  }
+  .preview-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .preview-actions :deep(.el-button) {
+    width: 100%;
+  }
+  .panel-head {
+    align-items: center;
   }
 }
 </style>
