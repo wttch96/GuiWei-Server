@@ -7,8 +7,12 @@ export const uploadPhoto = (file, itemId) => {
   return request.post('/photos', form)
 }
 
-export const listPhotos = (itemId) =>
-  request.get('/photos', { params: { item_id: itemId } })
+export const listPhotos = (params = {}) => request.get('/photos', { params })
+
+export const getPhoto = (photoId) => request.get(`/photos/${photoId}`)
+
+export const batchDeletePhotos = (ids) =>
+  request.post('/photos/batch-delete', { ids })
 
 export const attachPhoto = (photoId, itemId) =>
   request.post(`/photos/${photoId}/attach`, { item_id: itemId })
@@ -17,5 +21,8 @@ export const setPrimaryPhoto = (photoId) => request.post(`/photos/${photoId}/pri
 
 export const deletePhoto = (photoId) => request.delete(`/photos/${photoId}`)
 
-export const analyzePhoto = (photoId, data) =>
-  request.post(`/photos/${photoId}/analyze`, data, { timeout: 180000 })
+export const analyzePhoto = (photoId, data = {}) =>
+  request.post(`/photos/${photoId}/analyze`, data ?? {}, { timeout: 180000 })
+
+export const findSimilarItems = (photoId, data = {}) =>
+  request.post(`/photos/${photoId}/similar`, data ?? {}, { timeout: 30000 })

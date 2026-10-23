@@ -50,6 +50,7 @@ def _build_query(filters: dict):
                 Item.name.ilike(term),
                 Item.description.ilike(term),
                 Item.ai_summary.ilike(term),
+                Item.color_family.ilike(term),
                 Item.category.has(Category.name.ilike(term)),
                 Item.tags.any(Tag.name.ilike(term)),
             )
@@ -76,6 +77,9 @@ def _build_query(filters: dict):
     status = (filters.get("status") or "").strip()
     if status:
         query = query.filter(Item.status == status)
+    color_family = (filters.get("color_family") or "").strip()
+    if color_family:
+        query = query.filter(Item.color_family == color_family)
     return query
 
 
@@ -146,6 +150,7 @@ def create_item(data: dict) -> dict:
         quantity=quantity,
         unit=(data.get("unit") or "件").strip() or "件",
         status=_validate_status(data.get("status")),
+        color_family=(data.get("color_family") or "").strip()[:20],
         tags=tags,
     )
     db.session.add(item)
@@ -186,6 +191,8 @@ def update_item(item_id: int, data: dict) -> dict:
         item.unit = (data.get("unit") or "件").strip() or "件"
     if "status" in data:
         item.status = _validate_status(data.get("status"))
+    if "color_family" in data:
+        item.color_family = (data.get("color_family") or "").strip()[:20]
 
     if "category_id" in data:
         if data.get("category_id") is None:

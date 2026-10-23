@@ -17,6 +17,7 @@ fi
 
 echo
 echo "前端启动中：http://localhost:5173"
+echo "手机访问：http://电脑局域网IP:5173（需与电脑同一 Wi-Fi）"
 echo "请确保后端已在 http://127.0.0.1:5000 运行。"
 echo "按 Ctrl+C 停止服务。"
 echo

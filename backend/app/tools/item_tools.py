@@ -14,17 +14,19 @@ def search_items(
     category: str = "",
     tag: str = "",
     status: str = "",
+    color_family: str = "",
     limit: int = 20,
 ) -> str:
     """搜索物品。所有条件都可选，可组合使用。
 
     Args:
-        query: 关键词，会匹配物品名称、描述、分类名和标签名。
+        query: 关键词，会匹配物品名称、描述、分类名、标签名和色系。
         room: 房间名称或 ID。
         container_path: 容器路径，例如 "电视柜/上层抽屉"；需同时提供 room。
         category: 分类名称。
         tag: 标签名称。
         status: 状态，可选 in_stock / lent / used_up / discarded。
+        color_family: 色系，例如 黑色 / 白色 / 蓝色。
         limit: 返回条数，最多 50。
     """
     try:
@@ -32,6 +34,7 @@ def search_items(
             "q": query,
             "status": status,
             "tag_name": tag,
+            "color_family": color_family,
             "page_size": max(1, min(50, int(limit or 20))),
         }
         if room:
@@ -87,6 +90,7 @@ def create_item(
     quantity: int = 1,
     unit: str = "件",
     status: str = "in_stock",
+    color_family: str = "",
 ) -> str:
     """创建物品并放到指定房间/容器。房间必须存在；容器不存在时会报错。
 
@@ -100,6 +104,7 @@ def create_item(
         quantity: 数量，整数。
         unit: 单位，默认「件」。
         status: 状态，默认 in_stock。
+        color_family: 色系（可选），例如 黑色 / 白色 / 蓝色；不确定就留空。
     """
     try:
         target_room = room_ref(room)
@@ -116,6 +121,7 @@ def create_item(
                 "quantity": quantity,
                 "unit": unit,
                 "status": status,
+                "color_family": color_family,
             },
         )
     except ApiError as exc:
@@ -136,6 +142,7 @@ def update_item(
     tags: list[str] | str | None = None,
     room: str | None = None,
     container_path: str | None = None,
+    color_family: str | None = None,
 ) -> str:
     """更新物品字段。只传需要修改的字段。
 
@@ -150,6 +157,7 @@ def update_item(
         tags: 新标签列表（会整体替换旧标签）。
         room: 新房间名称或 ID（移动位置时使用）。
         container_path: 新容器路径；传空字符串表示放到房间顶层。需要移动时优先用 move_item。
+        color_family: 新色系（可选）；传空字符串表示清除。
     """
     data: dict = {}
     for key, value in {
@@ -158,6 +166,7 @@ def update_item(
         "quantity": quantity,
         "unit": unit,
         "status": status,
+        "color_family": color_family,
     }.items():
         if value is not None:
             data[key] = value

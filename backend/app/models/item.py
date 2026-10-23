@@ -27,6 +27,25 @@ ITEM_STATUSES = {
     "discarded": "已丢弃",
 }
 
+# 色系建议值（可选属性；接口不强制，允许自定义）
+COLOR_FAMILIES = (
+    "黑色",
+    "白色",
+    "灰色",
+    "米色",
+    "棕色",
+    "红色",
+    "橙色",
+    "黄色",
+    "绿色",
+    "青色",
+    "蓝色",
+    "紫色",
+    "粉色",
+    "彩色",
+    "其他",
+)
+
 
 class Item(db.Model, TimestampMixin):
     __tablename__ = "items"
@@ -48,6 +67,7 @@ class Item(db.Model, TimestampMixin):
     quantity = db.Column(db.Integer, default=1, nullable=False)
     unit = db.Column(db.String(20), default="件", nullable=False)
     status = db.Column(db.String(20), default="in_stock", nullable=False, index=True)
+    color_family = db.Column(db.String(20), default="", nullable=False, index=True)
 
     category = db.relationship("Category", back_populates="items")
     room = db.relationship("Room", back_populates="items")
@@ -99,6 +119,7 @@ class Item(db.Model, TimestampMixin):
             "unit": self.unit,
             "status": self.status,
             "status_label": ITEM_STATUSES.get(self.status, self.status),
+            "color_family": self.color_family or "",
             "tags": [tag.to_dict() for tag in self.tags],
             "photo_count": len(self.photos),
             "primary_photo": primary.to_dict() if primary else None,

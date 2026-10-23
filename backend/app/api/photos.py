@@ -1,12 +1,18 @@
 """照片上传、下载、关联与 AI 识图。"""
-from flask import Blueprint, request, send_file
+from flask import Blueprint, current_app, request, send_file
 
 from app.extensions import db
 from app.schemas.common import int_arg, parse_body
-from app.schemas.storage import PhotoAnalyzeIn, PhotoAttachIn
-from app.services import item_service, photo_service, vision_service
+from app.schemas.storage import (
+    PhotoAnalyzeIn,
+    PhotoAttachIn,
+    PhotoBatchDeleteIn,
+    PhotoSimilarIn,
+)
+from app.services import item_service, photo_service, similar_service, vision_service
 from app.utils.errors import ApiError
-from app.utils.responses import ok
+from app.utils.responses import ok, paged
+from app.utils.serialize import loads
 
 bp = Blueprint("photos", __name__, url_prefix="/api")
 
@@ -28,7 +34,19 @@ def upload_photo():
 
 @bp.get("/photos")
 def list_photos():
-    return ok(photo_service.list_photos(int_arg("item_id")))
+    item_id = int_arg("item_id")
+    if item_id is not None:
+        return ok(photo_service.list_photos(item_id))
+    page = int_arg("page", 1) or 1
+    page_size = int_arg("page_size", 24) or 24
+    items, total, summary = photo_service.list_photo_page(
+        q=request.args.get("q", ""),
+        status=request.args.get("status", "all"),
+        sort=request.args.get("sort", "newest"),
+        page=page,
+        page_size=page_size,
+    )
+    return paged(items, total, page, page_size, {"summary": summary})
 
 
 @bp.get("/photos/<int:photo_id>")
@@ -39,10 +57,12 @@ def get_photo(photo_id: int):
 @bp.get("/photos/<int:photo_id>/file")
 def photo_file(photo_id: int):
     photo = photo_service.get_photo(photo_id)
+    as_attachment = request.args.get("download") in {"1", "true", "yes"}
     response = send_file(
         photo_service.photo_abs_path(photo),
         mimetype=photo.mime_type,
         conditional=True,
+        as_attachment=as_attachment,
         download_name=photo.original_name or f"photo-{photo.id}",
     )
     response.headers["Cache-Control"] = "private, max-age=3600"
@@ -66,12 +86,27 @@ def delete_photo(photo_id: int):
     return ok({"deleted": True})
 
 
+@bp.post("/photos/batch-delete")
+def batch_delete_photos():
+    body = parse_body(PhotoBatchDeleteIn)
+    return ok(photo_service.delete_photos(body.ids))
+
+
 @bp.post("/photos/<int:photo_id>/analyze")
 def analyze_photo(photo_id: int):
-    body = parse_body(PhotoAnalyzeIn)
+    body = parse_body(PhotoAnalyzeIn, optional=True)
     photo = photo_service.get_photo(photo_id)
     suggestion = vision_service.analyze_photo(photo)
     db.session.commit()  # 先保存识图结果，避免建物品失败时丢失
+
+    # 描述匹配是增强功能，失败时不影响识图与入库
+    try:
+        similar_items = similar_service.find_similar_items(
+            suggestion, exclude_item_id=photo.item_id
+        )
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("相似物品匹配失败")
+        similar_items = []
 
     created = None
     if body.create_item:
@@ -100,5 +135,20 @@ def analyze_photo(photo_id: int):
             "photo": photo.to_dict(),
             "suggestion": suggestion,
             "item": created,
+            "similar_items": similar_items,
         }
     )
+
+
+@bp.post("/photos/<int:photo_id>/similar")
+def similar_photos(photo_id: int):
+    """用照片已有的识图描述匹配相似物品，不重复调用视觉模型。"""
+    body = parse_body(PhotoSimilarIn, optional=True)
+    photo = photo_service.get_photo(photo_id)
+    suggestion = loads(photo.ai_result, None)
+    if not isinstance(suggestion, dict) or not suggestion:
+        raise ApiError("请先执行 AI 识图，再查找相似物品", 422)
+    items = similar_service.find_similar_items(
+        suggestion, limit=body.limit, exclude_item_id=photo.item_id
+    )
+    return ok({"suggestion": suggestion, "items": items})

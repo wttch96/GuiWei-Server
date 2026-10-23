@@ -22,9 +22,20 @@ def status():
     return ok(ai_service.status())
 
 
+@bp.get("/sessions")
+def sessions():
+    """会话列表：标题、消息数与累计 token。"""
+    return ok(ai_service.list_sessions())
+
+
 @bp.get("/sessions/<session_id>/messages")
 def session_messages(session_id: str):
     return ok(ai_service.get_messages(session_id[:64]))
+
+
+@bp.delete("/sessions/<session_id>")
+def delete_session(session_id: str):
+    return ok(ai_service.delete_session(session_id[:64]))
 
 
 @bp.get("/tools")

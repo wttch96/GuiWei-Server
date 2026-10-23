@@ -12,6 +12,7 @@ class AiMessage(db.Model, TimestampMixin):
     role = db.Column(db.String(16), nullable=False)  # user / assistant
     content = db.Column(db.Text, default="", nullable=False)
     tool_trace = db.Column(db.Text, default="", nullable=False)
+    usage = db.Column(db.Text, default="", nullable=False)  # 本轮的 token 统计 JSON
 
     def to_dict(self) -> dict:
         return {
@@ -20,5 +21,6 @@ class AiMessage(db.Model, TimestampMixin):
             "role": self.role,
             "content": self.content,
             "tool_trace": loads(self.tool_trace, []),
+            "usage": loads(self.usage, None),
             "created_at": iso(self.created_at),
         }

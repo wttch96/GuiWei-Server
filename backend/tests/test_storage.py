@@ -45,6 +45,32 @@ def test_nested_containers_tree_and_path(client, auth):
     assert item["location_path"] == "客厅 / 电视柜 / 上层抽屉"
 
 
+def test_item_color_family_is_optional(client, auth):
+    room = create_room(client, auth)
+    item = _create_item(client, auth, room["id"], color_family="黑色")
+    assert item["color_family"] == "黑色"
+
+    plain = _create_item(client, auth, room["id"], name="雨伞")
+    assert plain["color_family"] == ""
+
+    filtered = client.get("/api/items?color_family=黑色", headers=auth).get_json()["data"]
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["id"] == item["id"]
+
+    updated = client.put(
+        f"/api/items/{item['id']}", json={"color_family": " 蓝色 "}, headers=auth
+    )
+    assert updated.get_json()["data"]["color_family"] == "蓝色"
+
+    cleared = client.put(
+        f"/api/items/{item['id']}", json={"color_family": ""}, headers=auth
+    )
+    assert cleared.get_json()["data"]["color_family"] == ""
+
+    by_keyword = client.get("/api/items?q=蓝色", headers=auth).get_json()["data"]
+    assert by_keyword["total"] == 0
+
+
 def test_item_crud_tags_and_search(client, auth):
     room = create_room(client, auth)
     item = _create_item(

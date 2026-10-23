@@ -62,6 +62,12 @@ const routes = [
         meta: { title: '拍照识物' },
       },
       {
+        path: 'photos',
+        name: 'photos',
+        component: () => import('../views/PhotosView.vue'),
+        meta: { title: '图片管理' },
+      },
+      {
         path: 'logs',
         name: 'logs',
         component: () => import('../views/LogsView.vue'),

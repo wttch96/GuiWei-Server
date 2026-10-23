@@ -3,7 +3,7 @@ from app.models.admin import Admin
 from app.models.ai_message import AiMessage
 from app.models.category import Category
 from app.models.container import Container
-from app.models.item import ITEM_STATUSES, Item, item_tags
+from app.models.item import COLOR_FAMILIES, ITEM_STATUSES, Item, item_tags
 from app.models.log import OperationLog
 from app.models.photo import Photo
 from app.models.room import Room
@@ -13,6 +13,7 @@ __all__ = [
     "Admin",
     "AiMessage",
     "Category",
+    "COLOR_FAMILIES",
     "Container",
     "Item",
     "ITEM_STATUSES",

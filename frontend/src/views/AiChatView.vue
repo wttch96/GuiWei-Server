@@ -2,15 +2,27 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  Box,
   ChatDotRound,
   Delete,
+  Location,
   MagicStick,
+  Plus,
   Promotion,
+  Refresh,
   Tools,
 } from '@element-plus/icons-vue'
-import { chat, getAiStatus, getSessionMessages, getTools } from '../api/ai'
+import {
+  chat,
+  getAiStatus,
+  getSessionMessages,
+  getSessions,
+  getTools,
+  removeSession,
+} from '../api/ai'
 import { useAuthStore } from '../stores/auth'
-import { prettyJson } from '../utils/format'
+import { formatDate, photoUrl, prettyJson, statusInfo } from '../utils/format'
+import MarkdownBody from '../components/MarkdownBody.vue'
 
 const auth = useAuthStore()
 
@@ -32,7 +44,31 @@ const historyLoading = ref(false)
 const toolsVisible = ref(false)
 const scrollRef = ref(null)
 const sessionId = ref(localStorage.getItem(SESSION_KEY) || '')
+const sessionsVisible = ref(false)
+const sessions = ref([])
+const sessionsLoading = ref(false)
+const sessionUsage = ref(emptyUsage())
 const userInitial = computed(() => (auth.adminName || '管').slice(0, 1).toUpperCase())
+
+function emptyUsage() {
+  return { input_tokens: 0, output_tokens: 0, total_tokens: 0, llm_calls: 0 }
+}
+
+function sumUsage(list) {
+  const total = emptyUsage()
+  for (const usage of list) {
+    if (!usage) continue
+    total.input_tokens += usage.input_tokens || 0
+    total.output_tokens += usage.output_tokens || 0
+    total.total_tokens += usage.total_tokens || 0
+    total.llm_calls += usage.llm_calls || 0
+  }
+  return total
+}
+
+function formatTokens(value) {
+  return Number(value || 0).toLocaleString('zh-CN')
+}
 
 async function loadStatus() {
   const [aiStatus, toolList] = await Promise.all([
@@ -52,7 +88,12 @@ async function loadHistory() {
       role: row.role,
       content: row.content,
       tool_calls: row.tool_trace || [],
+      cards: row.cards || [],
+      usage: row.usage || null,
     }))
+    sessionUsage.value = sumUsage(
+      rows.filter((row) => row.role === 'assistant').map((row) => row.usage),
+    )
     await scrollToBottom()
   } catch {
     sessionId.value = ''
@@ -90,7 +131,12 @@ async function send(text) {
       role: 'assistant',
       content: result.reply,
       tool_calls: result.tool_calls || [],
+      cards: result.cards || [],
+      usage: result.usage || null,
     })
+    sessionUsage.value = result.session_usage || sumUsage(
+      messages.value.filter((row) => row.role === 'assistant').map((row) => row.usage),
+    )
   } catch {
     // 请求层已提示错误，保留用户消息便于重试
   } finally {
@@ -117,8 +163,52 @@ async function newSession() {
   }
   messages.value = []
   sessionId.value = ''
+  sessionUsage.value = emptyUsage()
   localStorage.removeItem(SESSION_KEY)
   input.value = ''
+  sessionsVisible.value = false
+}
+
+async function loadSessions() {
+  sessionsLoading.value = true
+  try {
+    sessions.value = await getSessions()
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+function openSessions() {
+  sessionsVisible.value = true
+  loadSessions()
+}
+
+async function openSession(session) {
+  if (sending.value) return
+  sessionsVisible.value = false
+  if (session.session_id === sessionId.value && messages.value.length) return
+  sessionId.value = session.session_id
+  localStorage.setItem(SESSION_KEY, session.session_id)
+  await loadHistory()
+}
+
+async function deleteSession(session) {
+  await ElMessageBox.confirm(
+    `删除会话「${session.title}」及其全部消息？该操作无法恢复。`,
+    '删除会话',
+    { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+  )
+  await removeSession(session.session_id)
+  ElMessage.success('会话已删除')
+  sessions.value = sessions.value.filter(
+    (item) => item.session_id !== session.session_id,
+  )
+  if (session.session_id === sessionId.value) {
+    messages.value = []
+    sessionId.value = ''
+    sessionUsage.value = emptyUsage()
+    localStorage.removeItem(SESSION_KEY)
+  }
 }
 
 function toolOk(call) {
@@ -143,8 +233,18 @@ onMounted(async () => {
         <el-tag v-if="status" size="small" :type="status.chat_configured ? 'success' : 'info'" effect="plain">
           {{ status.chat_configured ? status.model || 'DeepSeek' : '未配置模型' }}
         </el-tag>
+        <el-tooltip
+          v-if="sessionUsage.total_tokens"
+          placement="bottom"
+          :content="`输入 ${formatTokens(sessionUsage.input_tokens)} · 输出 ${formatTokens(sessionUsage.output_tokens)} · ${sessionUsage.llm_calls} 次模型调用`"
+        >
+          <el-tag size="small" type="info" effect="plain">
+            本会话 {{ formatTokens(sessionUsage.total_tokens) }} tokens
+          </el-tag>
+        </el-tooltip>
+        <el-button :icon="ChatDotRound" @click="openSessions">会话</el-button>
         <el-button :icon="Tools" @click="toolsVisible = true">可用工具 {{ tools.length }}</el-button>
-        <el-button :icon="Delete" @click="newSession">新会话</el-button>
+        <el-button type="primary" plain :icon="Plus" @click="newSession">新建会话</el-button>
       </div>
     </div>
 
@@ -188,8 +288,80 @@ onMounted(async () => {
               <el-icon><MagicStick /></el-icon>
             </div>
             <div class="msg-body">
-              <div v-if="message.content" class="bubble">
-                {{ message.content }}
+              <div
+                v-if="message.content"
+                class="bubble"
+                :class="{ 'bubble-markdown': message.role === 'assistant' }"
+              >
+                <MarkdownBody
+                  v-if="message.role === 'assistant'"
+                  :content="message.content"
+                />
+                <template v-else>{{ message.content }}</template>
+              </div>
+
+              <div
+                v-if="message.role === 'assistant' && message.cards?.length"
+                class="item-cards"
+              >
+                <article
+                  v-for="card in message.cards"
+                  :key="card.id"
+                  class="item-card"
+                >
+                  <el-image
+                    v-if="card.primary_photo"
+                    class="card-photo"
+                    :src="photoUrl(card.primary_photo)"
+                    :preview-src-list="[photoUrl(card.primary_photo)]"
+                    fit="cover"
+                    preview-teleported
+                  />
+                  <div v-else class="card-photo card-photo--empty">
+                    <el-icon :size="22"><Box /></el-icon>
+                  </div>
+
+                  <div class="card-main">
+                    <div class="card-title-row">
+                      <span class="card-name">{{ card.name }}</span>
+                      <el-tag
+                        v-if="card.status_label"
+                        size="small"
+                        :type="statusInfo(card.status).type"
+                        effect="light"
+                      >
+                        {{ card.status_label }}
+                      </el-tag>
+                    </div>
+
+                    <div class="card-location">
+                      <el-icon><Location /></el-icon>
+                      <span>{{ card.location_path || '未设置位置' }}</span>
+                    </div>
+
+                    <div class="card-meta">
+                      <span v-if="card.category" class="card-category">
+                        {{ card.category }}
+                      </span>
+                      <span class="card-qty">{{ card.quantity }} {{ card.unit }}</span>
+                    </div>
+
+                    <div v-if="card.tags?.length" class="card-tags">
+                      <el-tag
+                        v-for="tag in card.tags"
+                        :key="tag"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ tag }}
+                      </el-tag>
+                    </div>
+
+                    <p v-if="card.description" class="card-desc">
+                      {{ card.description }}
+                    </p>
+                  </div>
+                </article>
               </div>
 
               <div v-if="message.tool_calls?.length" class="trace">
@@ -213,6 +385,13 @@ onMounted(async () => {
                       >
                         {{ toolOk(call) ? '成功' : '失败' }}
                       </el-tag>
+                      <span
+                        v-if="call.usage?.total_tokens"
+                        class="trace-token"
+                        title="该工具调用所在的模型轮次 token 消耗"
+                      >
+                        {{ formatTokens(call.usage.total_tokens) }} tokens
+                      </span>
                     </template>
                     <div class="trace-label">参数</div>
                     <pre class="trace-code">{{ prettyJson(call.args) }}</pre>
@@ -220,6 +399,20 @@ onMounted(async () => {
                     <pre class="trace-code">{{ prettyJson(call.result) }}</pre>
                   </el-collapse-item>
                 </el-collapse>
+              </div>
+
+              <div
+                v-if="message.role === 'assistant' && message.usage"
+                class="msg-usage"
+              >
+                <span class="usage-total">
+                  本轮 {{ formatTokens(message.usage.total_tokens) }} tokens
+                </span>
+                <span>输入 {{ formatTokens(message.usage.input_tokens) }}</span>
+                <span>输出 {{ formatTokens(message.usage.output_tokens) }}</span>
+                <span v-if="message.usage.llm_calls">
+                  {{ message.usage.llm_calls }} 次模型调用
+                </span>
               </div>
             </div>
             <div v-if="message.role === 'user'" class="avatar user-avatar">
@@ -275,12 +468,54 @@ onMounted(async () => {
         </el-collapse-item>
       </el-collapse>
     </el-drawer>
+
+    <el-drawer v-model="sessionsVisible" title="会话记录" size="420px">
+      <div class="session-actions">
+        <el-button type="primary" :icon="Plus" @click="newSession">新建会话</el-button>
+        <el-button :icon="Refresh" :loading="sessionsLoading" @click="loadSessions">刷新</el-button>
+      </div>
+      <p class="drawer-sub">
+        每个会话独立保存消息与 token 统计；删除会话会同时删除其全部消息。
+      </p>
+      <div v-loading="sessionsLoading" class="session-list">
+        <div
+          v-for="item in sessions"
+          :key="item.session_id"
+          class="session-item"
+          :class="{ active: item.session_id === sessionId }"
+          @click="openSession(item)"
+        >
+          <div class="session-main">
+            <div class="session-title">{{ item.title }}</div>
+            <div class="session-meta">
+              <span>{{ formatDate(item.updated_at) }}</span>
+              <span>{{ item.message_count }} 条消息</span>
+              <span>{{ formatTokens(item.usage?.total_tokens) }} tokens</span>
+            </div>
+            <div v-if="item.preview" class="session-preview">{{ item.preview }}</div>
+          </div>
+          <el-button
+            text
+            type="danger"
+            :icon="Delete"
+            title="删除会话"
+            @click.stop="deleteSession(item)"
+          />
+        </div>
+        <el-empty
+          v-if="!sessions.length && !sessionsLoading"
+          description="还没有会话，发送第一条消息即可创建"
+          :image-size="70"
+        />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <style scoped>
 .chat-page {
   height: calc(100vh - 114px);
+  height: calc(100dvh - 114px);
 }
 
 .chat-panel {
@@ -436,6 +671,129 @@ onMounted(async () => {
   border-top-right-radius: 4px;
 }
 
+.bubble-markdown {
+  white-space: normal;
+}
+
+.item-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.item-card {
+  display: flex;
+  gap: 11px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(28, 58, 50, 0.04);
+}
+
+.card-photo {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #eef4f1;
+  cursor: zoom-in;
+}
+
+.card-photo :deep(img) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.card-photo--empty {
+  display: grid;
+  place-items: center;
+  color: #9db3ac;
+  cursor: default;
+}
+
+.card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-name {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.card-location .el-icon {
+  flex: none;
+}
+
+.card-location span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.card-category {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.card-qty {
+  color: var(--muted);
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.card-desc {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .typing {
   display: flex;
   gap: 4px;
@@ -518,6 +876,27 @@ onMounted(async () => {
   margin-left: 8px;
 }
 
+.trace-token {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.msg-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.msg-usage .usage-total {
+  color: var(--brand-deep);
+  font-weight: 600;
+}
+
 .trace-label {
   font-size: 10.5px;
   color: var(--muted);
@@ -595,15 +974,88 @@ onMounted(async () => {
   color: var(--ink-2);
 }
 
+.session-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 140px;
+}
+
+.session-item {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.session-item:hover {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+}
+
+.session-item.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.session-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.session-preview {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item :deep(.el-button) {
+  flex: none;
+  align-self: center;
+}
+
 @media (max-width: 640px) {
   .chat-page {
     height: calc(100vh - 94px);
+    height: calc(100dvh - 94px);
   }
   .chat-scroll {
     padding: 14px 12px 8px;
   }
   .msg-body {
     max-width: 84%;
+  }
+  .item-cards {
+    grid-template-columns: 1fr;
   }
   .composer-hint {
     display: none;

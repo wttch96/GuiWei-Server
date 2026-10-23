@@ -60,15 +60,17 @@ class Config:
     # DeepSeek 对话
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
     DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
     DEEPSEEK_TEMPERATURE = _float("DEEPSEEK_TEMPERATURE", 0)
     AI_MAX_ITERATIONS = _int("AI_MAX_ITERATIONS", 8)
     AI_HISTORY_LIMIT = 20
 
-    # 视觉模型（OpenAI 兼容 /chat/completions）
-    VISION_API_BASE = os.getenv("VISION_API_BASE", "https://api.deepseek.com/v1")
-    VISION_API_KEY = os.getenv("VISION_API_KEY", "") or DEEPSEEK_API_KEY
-    VISION_MODEL = os.getenv("VISION_MODEL", "")
+    # 视觉识图（DeepSeek 多模态，OpenAI 兼容 /chat/completions）
+    # deepseek-flash 支持图片输入，默认复用对话的 API Base 与 Key；
+    # 如需其它兼容网关，可用 VISION_* 单独覆盖。
+    VISION_API_BASE = os.getenv("VISION_API_BASE") or DEEPSEEK_API_BASE
+    VISION_API_KEY = os.getenv("VISION_API_KEY") or DEEPSEEK_API_KEY
+    VISION_MODEL = os.getenv("VISION_MODEL") or "deepseek-flash"
     VISION_TIMEOUT = _int("VISION_TIMEOUT", 120)
 
     # 其它

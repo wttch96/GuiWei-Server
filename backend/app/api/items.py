@@ -19,6 +19,7 @@ def _filters() -> dict:
         "tag_id": int_arg("tag_id"),
         "tag_name": request.args.get("tag_name", ""),
         "status": request.args.get("status", ""),
+        "color_family": request.args.get("color_family", ""),
         "sort": request.args.get("sort", "updated_at"),
         "order": request.args.get("order", "desc"),
     }

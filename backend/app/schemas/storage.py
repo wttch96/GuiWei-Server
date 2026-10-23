@@ -54,6 +54,7 @@ class ItemIn(APIModel):
     quantity: int = Field(default=1, ge=0)
     unit: str = "件"
     status: str = "in_stock"
+    color_family: str = Field(default="", max_length=20)
     photo_ids: list[int] = Field(default_factory=list)
 
 
@@ -64,6 +65,7 @@ class ItemUpdate(APIModel):
     quantity: int | None = Field(default=None, ge=0)
     unit: str | None = None
     status: str | None = None
+    color_family: str | None = Field(default=None, max_length=20)
     category_id: int | None = None
     category_name: str | None = None
     tag_ids: list[int] | None = None
@@ -121,6 +123,14 @@ class PhotoAnalyzeIn(APIModel):
     name: str | None = None
     description: str | None = None
     quantity: int | None = Field(default=None, ge=0)
+
+
+class PhotoSimilarIn(APIModel):
+    limit: int = Field(default=6, ge=1, le=20)
+
+
+class PhotoBatchDeleteIn(APIModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
 
 
 class ChatIn(APIModel):

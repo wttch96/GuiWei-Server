@@ -1,14 +1,14 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Star, StarFilled, Delete, Picture } from '@element-plus/icons-vue'
+import { Camera, Plus, Star, StarFilled, Delete, Picture } from '@element-plus/icons-vue'
 import { listRooms } from '../api/rooms'
 import { getContainerTree } from '../api/containers'
 import { listCategories } from '../api/categories'
 import { listTags } from '../api/tags'
 import { createItem, getItem, updateItem } from '../api/items'
 import { deletePhoto, setPrimaryPhoto, uploadPhoto } from '../api/photos'
-import { STATUS_OPTIONS, photoUrl } from '../utils/format'
+import { COLOR_FAMILIES, STATUS_OPTIONS, photoUrl } from '../utils/format'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -24,6 +24,7 @@ const visible = computed({
 })
 
 const formRef = ref()
+const cameraInput = ref()
 const rooms = ref([])
 const categories = ref([])
 const tags = ref([])
@@ -44,6 +45,7 @@ const form = reactive({
   quantity: 1,
   unit: '件',
   status: 'in_stock',
+  color_family: '',
 })
 
 const rules = {
@@ -87,6 +89,7 @@ async function init() {
         quantity: detail.quantity,
         unit: detail.unit || '件',
         status: detail.status || 'in_stock',
+        color_family: detail.color_family || '',
       })
       existingPhotos.value = detail.photos || []
       containerTree.value = []
@@ -102,6 +105,7 @@ async function init() {
         quantity: 1,
         unit: '件',
         status: 'in_stock',
+        color_family: '',
       })
       containerTree.value = []
       if (form.room_id) await loadTree(form.room_id)
@@ -125,10 +129,30 @@ async function onRoomChange(roomId) {
   await loadTree(roomId)
 }
 
-async function uploadRequest(options) {
-  const photo = await uploadPhoto(options.file)
+async function uploadFile(file) {
+  const photo = await uploadPhoto(file)
   newPhotos.value.push(photo)
   return photo
+}
+
+function uploadRequest(options) {
+  return uploadFile(options.file)
+}
+
+function triggerCamera() {
+  cameraInput.value?.click()
+}
+
+async function onCameraPick(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (file) {
+    try {
+      await uploadFile(file)
+    } catch {
+      // 请求层已提示错误
+    }
+  }
 }
 
 async function removePhoto(photo) {
@@ -166,6 +190,7 @@ async function submit() {
       quantity: Number(form.quantity) || 0,
       unit: form.unit || '件',
       status: form.status,
+      color_family: form.color_family || '',
       tag_names: form.tag_names,
     }
     if (form.category_name) payload.category_name = form.category_name
@@ -294,7 +319,27 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
               <el-input v-model="form.unit" placeholder="件" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12">
+          <el-col :xs="12" :sm="6">
+            <el-form-item label="色系">
+              <el-select
+                v-model="form.color_family"
+                filterable
+                allow-create
+                clearable
+                default-first-option
+                placeholder="可选"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="color in COLOR_FAMILIES"
+                  :key="color"
+                  :label="color"
+                  :value="color"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :sm="6">
             <el-form-item label="状态">
               <el-select v-model="form.status" style="width: 100%">
                 <el-option
@@ -360,13 +405,27 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
                 <span>上传照片</span>
               </div>
             </el-upload>
+
+            <button type="button" class="photo-add photo-camera" @click="triggerCamera">
+              <el-icon :size="20"><Camera /></el-icon>
+              <span>拍照</span>
+            </button>
+
+            <input
+              ref="cameraInput"
+              class="camera-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              @change="onCameraPick"
+            />
           </div>
         </el-form-item>
       </el-form>
 
       <div class="photo-tip">
         <el-icon><Picture /></el-icon>
-        支持 JPG / PNG / WEBP / GIF，单张不超过 20MB。上传后可到「拍照识物」做 AI 识别。
+        支持拍照或上传 JPG / PNG / WEBP / GIF，单张不超过 20MB。上传后可到「拍照识物」做 AI 识别。
       </div>
     </div>
 
@@ -452,6 +511,8 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
   align-items: center;
   justify-content: center;
   gap: 5px;
+  padding: 0;
+  font-family: inherit;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
@@ -460,6 +521,15 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
 .photo-add:hover {
   border-color: var(--brand);
   background: var(--brand-soft);
+}
+
+.photo-camera {
+  border-style: solid;
+  border-color: var(--brand-line);
+}
+
+.camera-input {
+  display: none;
 }
 
 .photo-tip {

@@ -8,7 +8,13 @@ import { listRooms } from '../api/rooms'
 import { listCategories } from '../api/categories'
 import { listTags } from '../api/tags'
 import ItemFormDialog from '../components/ItemFormDialog.vue'
-import { STATUS_OPTIONS, formatDate, photoUrl, statusInfo } from '../utils/format'
+import {
+  COLOR_FAMILIES,
+  STATUS_OPTIONS,
+  formatDate,
+  photoUrl,
+  statusInfo,
+} from '../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +36,7 @@ const filters = reactive({
   category_id: null,
   tag_id: null,
   status: '',
+  color_family: '',
 })
 
 async function loadOptions() {
@@ -57,6 +64,7 @@ async function load() {
     if (filters.category_id) params.category_id = filters.category_id
     if (filters.tag_id) params.tag_id = filters.tag_id
     if (filters.status) params.status = filters.status
+    if (filters.color_family) params.color_family = filters.color_family
     const data = await listItems(params)
     items.value = data.items
     total.value = data.total
@@ -77,6 +85,7 @@ function reset() {
     category_id: null,
     tag_id: null,
     status: '',
+    color_family: '',
   })
   page.value = 1
   load()
@@ -168,7 +177,7 @@ watch(
       <div class="toolbar">
         <el-input
           v-model="filters.q"
-          placeholder="搜索名称、描述、分类、标签"
+          placeholder="搜索名称、描述、分类、标签、色系"
           :prefix-icon="Search"
           clearable
           style="width: 260px"
@@ -202,6 +211,19 @@ watch(
             :value="status.value"
           />
         </el-select>
+        <el-select
+          v-model="filters.color_family"
+          placeholder="全部色系"
+          clearable
+          style="width: 120px"
+        >
+          <el-option
+            v-for="color in COLOR_FAMILIES"
+            :key="color"
+            :label="color"
+            :value="color"
+          />
+        </el-select>
         <el-button type="primary" :icon="Search" @click="search">查询</el-button>
         <el-button :icon="Refresh" @click="reset">重置</el-button>
       </div>
@@ -232,6 +254,12 @@ watch(
           <template #default="{ row }">
             <span v-if="row.category" class="soft-tag">{{ row.category.name }}</span>
             <span v-else class="muted">未分类</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="色系" width="90">
+          <template #default="{ row }">
+            <span v-if="row.color_family" class="soft-tag">{{ row.color_family }}</span>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
         <el-table-column label="标签" min-width="160">

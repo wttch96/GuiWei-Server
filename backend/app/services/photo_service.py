@@ -6,6 +6,8 @@ from pathlib import Path
 
 from flask import current_app
 from PIL import Image, UnidentifiedImageError
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
@@ -107,6 +109,102 @@ def list_photos(item_id: int | None = None) -> list[dict]:
     if item_id is not None:
         query = query.filter_by(item_id=int(item_id))
     return [row.to_dict() for row in query.order_by(Photo.id.desc()).all()]
+
+
+PHOTO_SORTS = {
+    "newest": (Photo.created_at.desc(), Photo.id.desc()),
+    "oldest": (Photo.created_at.asc(), Photo.id.asc()),
+    "largest": (Photo.size.desc(), Photo.id.desc()),
+    "smallest": (Photo.size.asc(), Photo.id.asc()),
+}
+
+
+def photo_summary() -> dict:
+    """图片库总览：文件数量、占用空间、未关联数量。"""
+    count, size = db.session.query(
+        func.count(Photo.id), func.coalesce(func.sum(Photo.size), 0)
+    ).one()
+    orphan_count, orphan_size = (
+        db.session.query(
+            func.count(Photo.id), func.coalesce(func.sum(Photo.size), 0)
+        )
+        .filter(Photo.item_id.is_(None))
+        .one()
+    )
+    return {
+        "count": int(count),
+        "size": int(size),
+        "unattached_count": int(orphan_count),
+        "unattached_size": int(orphan_size),
+    }
+
+
+def list_photo_page(
+    q: str = "",
+    status: str = "all",
+    sort: str = "newest",
+    page: int = 1,
+    page_size: int = 24,
+) -> tuple[list[dict], int, dict]:
+    """文件管理用的分页列表：附带物品名称，并省略识图全文。"""
+    page = max(1, int(page or 1))
+    page_size = min(100, max(1, int(page_size or 24)))
+    query = Photo.query.options(joinedload(Photo.item))
+
+    term = (q or "").strip()
+    if term:
+        query = query.filter(Photo.original_name.ilike(f"%{term}%"))
+    status = (status or "all").strip()
+    if status == "attached":
+        query = query.filter(Photo.item_id.isnot(None))
+    elif status == "unattached":
+        query = query.filter(Photo.item_id.is_(None))
+
+    total = query.count()
+    order = PHOTO_SORTS.get((sort or "newest").strip(), PHOTO_SORTS["newest"])
+    rows = query.order_by(*order).offset((page - 1) * page_size).limit(page_size).all()
+
+    items = []
+    for row in rows:
+        data = row.to_dict()
+        data.pop("ai_result", None)
+        data["item_name"] = row.item.name if row.item else None
+        items.append(data)
+    return items, total, photo_summary()
+
+
+def delete_photos(ids: list[int]) -> dict:
+    """批量删除图片文件，并维护所属物品的主图。"""
+    wanted = sorted({int(photo_id) for photo_id in ids})
+    photos = Photo.query.filter(Photo.id.in_(wanted)).all()
+    if not photos:
+        raise ApiError("照片不存在", 404)
+
+    found = {photo.id for photo in photos}
+    rel_paths = [photo.file_path for photo in photos]
+    primary_item_ids = {
+        photo.item_id for photo in photos if photo.is_primary and photo.item_id
+    }
+    log_service.record(
+        "batch_delete",
+        "photo",
+        None,
+        {"ids": sorted(found), "count": len(photos)},
+    )
+    for photo in photos:
+        db.session.delete(photo)
+    db.session.flush()
+
+    for item_id in primary_item_ids:
+        replacement = (
+            Photo.query.filter_by(item_id=item_id).order_by(Photo.id.asc()).first()
+        )
+        if replacement:
+            replacement.is_primary = True
+
+    db.session.commit()
+    delete_files(rel_paths)
+    return {"deleted": len(photos), "missing": sorted(set(wanted) - found)}
 
 
 def attach_to_item(photo_id: int, item_id: int) -> dict:

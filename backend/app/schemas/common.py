@@ -13,10 +13,14 @@ class APIModel(BaseModel):
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
 
-def parse_body(model_cls: type[T]) -> T:
+def parse_body(model_cls: type[T], optional: bool = False) -> T:
     payload = request.get_json(silent=True)
     if payload is None:
-        raise ApiError("请求体必须是 JSON", 400)
+        # 允许没有请求体的接口（字段均有默认值）省略 JSON body
+        if optional and not request.content_length:
+            payload = {}
+        else:
+            raise ApiError("请求体必须是 JSON", 400)
     if not isinstance(payload, dict):
         raise ApiError("请求体必须是 JSON 对象", 400)
     try:

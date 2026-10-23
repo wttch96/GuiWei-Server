@@ -30,6 +30,7 @@ if not exist ".env" (
 
 echo.
 echo 后端启动中：http://127.0.0.1:5000
+echo 手机请访问前端：http://电脑局域网IP:5173（需与电脑同一 Wi-Fi）
 echo 按 Ctrl+C 停止服务。
 echo.
 ".venv\Scripts\python.exe" run.py

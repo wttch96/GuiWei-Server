@@ -4,7 +4,8 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   server: {
-    host: '127.0.0.1',
+    // 监听所有网卡，手机与电脑在同一局域网时可直接访问
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       '/api': {

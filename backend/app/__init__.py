@@ -52,6 +52,7 @@ def create_app(config=None) -> Flask:
 
         if app.config.get("AUTO_CREATE_DB"):
             db.create_all()
+        _ensure_schema()
         if app.config.get("AUTO_BOOTSTRAP_ADMIN"):
             from app.models import Admin
             from app.services import admin_service
@@ -71,6 +72,37 @@ def _register_blueprints(app: Flask) -> None:
     from app.api import register_blueprints
 
     register_blueprints(app)
+
+
+def _ensure_schema() -> None:
+    """轻量迁移：为旧数据库补齐新增列，避免升级后启动报错。"""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    if "items" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("items")}
+    if "color_family" not in columns:
+        db.session.execute(
+            text("ALTER TABLE items ADD COLUMN color_family VARCHAR(20) NOT NULL DEFAULT ''")
+        )
+        db.session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_items_color_family "
+                "ON items (color_family)"
+            )
+        )
+        db.session.commit()
+
+    if "ai_messages" in inspector.get_table_names():
+        message_columns = {
+            column["name"] for column in inspector.get_columns("ai_messages")
+        }
+        if "usage" not in message_columns:
+            db.session.execute(
+                text("ALTER TABLE ai_messages ADD COLUMN usage TEXT NOT NULL DEFAULT ''")
+            )
+            db.session.commit()
 
 
 def _register_auth_guard(app: Flask) -> None:

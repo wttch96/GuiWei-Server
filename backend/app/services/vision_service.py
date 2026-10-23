@@ -1,8 +1,9 @@
 """视觉识图服务。
 
-通过 OpenAI 兼容的 /chat/completions 接口调用视觉模型（如 DeepSeek-VL2）。
-DeepSeek 官方文本 chat 接口不支持图片，须在 .env 中配置 VISION_* 指向可用的
-OpenAI 兼容视觉网关；未配置时接口明确返回 503。
+通过 DeepSeek 的 OpenAI 兼容 /chat/completions 接口调用多模态模型。
+deepseek-flash 支持图片输入（image_url + base64 data URL），默认复用
+DEEPSEEK_API_BASE / DEEPSEEK_API_KEY；也可用 VISION_* 指向其它兼容网关。
+未配置密钥时接口明确返回 503。
 """
 import base64
 import json
@@ -109,7 +110,7 @@ def _normalize(result: dict, raw_content: str) -> dict:
 def analyze_photo(photo: Photo) -> dict:
     if not is_configured():
         raise ApiError(
-            "未配置视觉模型。请在 .env 中设置 VISION_API_BASE / VISION_API_KEY / VISION_MODEL（需为 OpenAI 兼容的多模态接口）",
+            "未配置视觉模型。请设置 DEEPSEEK_API_KEY，或在 .env 中配置 VISION_API_BASE / VISION_API_KEY / VISION_MODEL（需为 OpenAI 兼容的多模态接口）",
             503,
         )
     cfg = current_app.config
