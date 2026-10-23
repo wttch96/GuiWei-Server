@@ -44,6 +44,7 @@ const containerDialog = reactive({
   editing: null,
   parentId: null,
   name: '',
+  nickname: '',
   code: '',
   description: '',
   saving: false,
@@ -61,7 +62,7 @@ const moveDialog = reactive({
 
 function findPath(nodes, id, prefix = []) {
   for (const node of nodes) {
-    const path = [...prefix, node.name]
+    const path = [...prefix, node.display_name || node.name]
     if (node.id === id) return path
     if (node.children?.length) {
       const found = findPath(node.children, id, path)
@@ -138,6 +139,7 @@ function openCreateRoot() {
     editing: null,
     parentId: null,
     name: '',
+    nickname: '',
     code: '',
     description: '',
   })
@@ -149,6 +151,7 @@ function openCreateChild(parent) {
     editing: null,
     parentId: parent.id,
     name: '',
+    nickname: '',
     code: '',
     description: '',
   })
@@ -160,6 +163,7 @@ function openEditContainer(node) {
     editing: node,
     parentId: node.parent_id,
     name: node.name,
+    nickname: node.nickname || '',
     code: node.code || '',
     description: node.description || '',
   })
@@ -171,6 +175,7 @@ async function submitContainer() {
     if (containerDialog.editing) {
       await updateContainer(containerDialog.editing.id, {
         name: containerDialog.name,
+        nickname: containerDialog.nickname,
         code: containerDialog.code,
         description: containerDialog.description,
       })
@@ -179,6 +184,7 @@ async function submitContainer() {
       await createContainer({
         room_id: roomId.value,
         name: containerDialog.name,
+        nickname: containerDialog.nickname,
         parent_id: containerDialog.parentId,
         code: containerDialog.code,
         description: containerDialog.description,
@@ -328,7 +334,7 @@ onMounted(loadAll)
           v-if="tree.length"
           :data="tree"
           node-key="id"
-          :props="{ label: 'name', children: 'children' }"
+          :props="{ label: 'display_name', children: 'children' }"
           highlight-current
           :current-node-key="selectedId"
           :expand-on-click-node="false"
@@ -340,6 +346,7 @@ onMounted(loadAll)
               <span class="tree-label">
                 <el-icon class="tree-icon"><Collection /></el-icon>
                 <span class="tree-name">{{ data.name }}</span>
+                <span v-if="data.nickname" class="tree-nick">{{ data.nickname }}</span>
                 <span v-if="data.item_count" class="tree-count">{{ data.item_count }}</span>
               </span>
               <el-dropdown
@@ -370,7 +377,7 @@ onMounted(loadAll)
         </div>
 
         <div class="tree-tip">
-          容器可以无限嵌套，例如「衣柜 / 顶层收纳盒」。
+          容器可以无限嵌套，例如「衣柜 / 顶层收纳盒」。也可以起昵称，例如「柜子A」的昵称设为「药柜」。
         </div>
       </aside>
 
@@ -489,7 +496,14 @@ onMounted(loadAll)
     >
       <el-form label-position="top">
         <el-form-item label="容器名称" required>
-          <el-input v-model="containerDialog.name" placeholder="例如：电视柜、上层抽屉" maxlength="80" />
+          <el-input v-model="containerDialog.name" placeholder="例如：柜子A、上层抽屉" maxlength="80" />
+        </el-form-item>
+        <el-form-item label="昵称">
+          <el-input
+            v-model="containerDialog.nickname"
+            placeholder="可选，例如：药柜、换季衣物"
+            maxlength="80"
+          />
         </el-form-item>
         <el-form-item label="位置编码">
           <el-input v-model="containerDialog.code" placeholder="可选，例如 A-01" maxlength="40" />
@@ -529,7 +543,7 @@ onMounted(loadAll)
           <el-tree-select
             v-model="moveDialog.targetParentId"
             :data="moveDialog.tree"
-            :props="{ label: 'name', children: 'children' }"
+            :props="{ label: 'display_name', children: 'children' }"
             node-key="id"
             check-strictly
             clearable
@@ -645,6 +659,16 @@ onMounted(loadAll)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tree-nick {
+  flex-shrink: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .tree-count {

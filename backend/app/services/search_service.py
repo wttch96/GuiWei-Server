@@ -1,4 +1,6 @@
 """全局搜索：房间 / 容器 / 物品 / 分类 / 标签。"""
+from sqlalchemy import or_
+
 from app.models import Category, Container, Room, Tag
 from app.services import container_service, item_service
 from app.services import room_service
@@ -12,7 +14,9 @@ def search(q: str, limit: int = 8) -> dict:
 
     rooms = Room.query.filter(Room.name.ilike(like)).limit(limit).all()
     containers = (
-        Container.query.filter(Container.name.ilike(like))
+        Container.query.filter(
+            or_(Container.name.ilike(like), Container.nickname.ilike(like))
+        )
         .order_by(Container.id.asc())
         .limit(limit)
         .all()

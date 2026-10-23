@@ -94,6 +94,16 @@ def _ensure_schema() -> None:
         )
         db.session.commit()
 
+    if "containers" in inspector.get_table_names():
+        container_columns = {
+            column["name"] for column in inspector.get_columns("containers")
+        }
+        if "nickname" not in container_columns:
+            db.session.execute(
+                text("ALTER TABLE containers ADD COLUMN nickname VARCHAR(80) NOT NULL DEFAULT ''")
+            )
+            db.session.commit()
+
     if "ai_messages" in inspector.get_table_names():
         message_columns = {
             column["name"] for column in inspector.get_columns("ai_messages")

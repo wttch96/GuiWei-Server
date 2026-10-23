@@ -14,10 +14,10 @@ import {
 } from '@element-plus/icons-vue'
 import { getAiStatus } from '../api/ai'
 import { listRooms } from '../api/rooms'
-import { getContainerTree } from '../api/containers'
+import { getContainerTree, listContainers } from '../api/containers'
 import { listCategories } from '../api/categories'
 import { listTags } from '../api/tags'
-import { createItem } from '../api/items'
+import { createItem, moveItem } from '../api/items'
 import {
   analyzePhoto,
   deletePhoto,
@@ -27,6 +27,7 @@ import {
   uploadPhoto,
 } from '../api/photos'
 import { photoUrl, COLOR_FAMILIES } from '../utils/format'
+import { downscalePhoto } from '../utils/image'
 
 const router = useRouter()
 
@@ -47,7 +48,18 @@ const similarLoading = ref(false)
 const similarChecked = ref(false)
 const formRef = ref()
 const cameraInput = ref()
+const uploaderRef = ref()
 const resultPanel = ref()
+const batch = ref([])
+const command = ref('')
+const commandInput = ref()
+const commandRunning = ref(false)
+const targetItem = ref(null)
+const allContainers = ref(null)
+let pendingFiles = []
+let pendingTimer = null
+let toastTimer = null
+let toastCount = 0
 let similarSeq = 0
 
 const form = reactive({
@@ -108,6 +120,110 @@ async function onRoomChange(roomId) {
   await loadTree(roomId)
 }
 
+async function loadContainerIndex() {
+  if (!allContainers.value) allContainers.value = await listContainers()
+  return allContainers.value
+}
+
+/** 从「放到客厅的药柜里」这类句子中识别房间和容器（名称、昵称或展示名）。 */
+function resolveLocation(text) {
+  const sentence = (text || '').replace(/\s+/g, '')
+  const pool = allContainers.value || []
+  let room = null
+  for (const item of rooms.value) {
+    if (item.name && item.name.length >= 2 && sentence.includes(item.name)) {
+      if (!room || item.name.length > room.name.length) room = item
+    }
+  }
+
+  const candidates = room ? pool.filter((row) => row.room_id === room.id) : pool
+  let best = null
+  for (const row of candidates) {
+    const keys = new Set()
+    for (const key of [row.name, row.nickname, row.display_name]) {
+      if (!key) continue
+      keys.add(key)
+      const plain = key.replace(/[（(][^（()）]*[）)]/g, '').trim()
+      if (plain) keys.add(plain)
+    }
+    for (const key of keys) {
+      if (key.length < 2 || !sentence.includes(key)) continue
+      if (!best || key.length > best.length) best = { row, length: key.length }
+    }
+  }
+
+  if (best) {
+    const container = best.row
+    if (!room) room = rooms.value.find((item) => item.id === container.room_id) || null
+    return { room, container }
+  }
+  return { room, container: null }
+}
+
+async function chooseTarget(item) {
+  targetItem.value = targetItem.value?.id === item.id ? null : item
+  if (!targetItem.value) return
+  ElMessage.success(`已选择已有物品「${item.name}」，一句话指令将作用于它`)
+  await nextTick()
+  commandInput.value?.focus()
+}
+
+async function runCommand() {
+  const text = command.value.trim()
+  if (!text) {
+    ElMessage.warning('请输入一句话指令，例如「放到客厅的药柜」')
+    return
+  }
+  if (!photo.value) return
+
+  commandRunning.value = true
+  try {
+    await loadContainerIndex()
+    const { room, container } = resolveLocation(text)
+    if (!room) {
+      ElMessage.warning('没看出要放到哪里，请带上房间名，例如「放到客厅的药柜」')
+      return
+    }
+    const locationText = [room.name, container?.display_name].filter(Boolean).join(' / ')
+
+    if (targetItem.value) {
+      try {
+        await ElMessageBox.confirm(
+          `把「${targetItem.value.name}」移动到「${locationText}」吗？`,
+          '确认移动',
+          { type: 'warning', confirmButtonText: '移动', cancelButtonText: '取消' },
+        )
+      } catch {
+        return
+      }
+      await moveItem(targetItem.value.id, {
+        room_id: room.id,
+        container_id: container?.id || null,
+      })
+      ElMessage.success(`已把「${targetItem.value.name}」移动到「${locationText}」`)
+      targetItem.value = null
+      command.value = ''
+      if (photo.value) await loadSimilar(photo.value.id)
+      return
+    }
+
+    form.room_id = room.id
+    await loadTree(room.id)
+    form.container_id = container?.id || null
+    try {
+      await formRef.value.validate()
+    } catch {
+      ElMessage.warning('请先补全物品名称，再执行指令')
+      return
+    }
+    await save()
+  } catch {
+    // 请求层已提示错误
+  } finally {
+    commandRunning.value = false
+  }
+}
+
 function fillForm(data) {
   if (!data) return
   form.name = data.name || ''
@@ -133,7 +249,14 @@ async function applyLocationHint(hint) {
   let nodes = containerTree.value
   let matchedId = null
   for (const part of parts) {
-    const node = nodes.find((item) => item.name === part)
+    const plain = part.replace(/[（(][^（()）]*[）)]$/, '').trim()
+    const node = nodes.find(
+      (item) =>
+        item.name === part ||
+        item.nickname === part ||
+        item.display_name === part ||
+        item.name === plain,
+    )
     if (!node) break
     matchedId = node.id
     nodes = node.children || []
@@ -172,8 +295,9 @@ function openSimilar(item) {
   router.push(`/items?edit=${item.id}`)
 }
 
-async function selectPhoto(row) {
+async function activatePhoto(row) {
   photo.value = row
+  targetItem.value = null
   savedItem.value = null
   clearSimilar()
   formRef.value?.clearValidate()
@@ -209,22 +333,70 @@ async function selectPhoto(row) {
   }
 }
 
-async function handleFile(file) {
-  if (!file) return
+/** 从「最近上传」选图时，用这张照片开一个新批次。 */
+function selectPhoto(row) {
+  batch.value = [row]
+  return activatePhoto(row)
+}
+
+function notifyUploaded(count) {
+  toastCount += count
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => {
+    const total = toastCount
+    toastCount = 0
+    ElMessage.success(
+      total > 1
+        ? `已上传 ${total} 张照片，正在识别第 1 张，可点缩略图切换`
+        : '照片已上传，正在自动识别…',
+    )
+  }, 250)
+}
+
+/** 批量上传：一次可选/拍多张，全部并入当前批次，默认识别第一张。 */
+async function handleFiles(files) {
+  const list = Array.from(files || []).filter(Boolean)
+  if (!list.length) return
   uploading.value = true
+  const uploaded = []
   try {
-    const uploaded = await uploadPhoto(file)
-    await selectPhoto(uploaded)
-    const existing = recent.value.findIndex((row) => row.id === uploaded.id)
-    if (existing >= 0) recent.value.splice(existing, 1)
-    recent.value.unshift(uploaded)
-    ElMessage.success('照片已上传，点击「AI 识别」开始分析')
+    for (const file of list) {
+      try {
+        uploaded.push(await uploadPhoto(await downscalePhoto(file)))
+      } catch {
+        // 单张失败不影响其余照片
+      }
+    }
+    if (!uploaded.length) return
+    // 已入库的照片不再参与新一批，避免把两张不同物品的照片混在一起
+    const base = batch.value.filter((row) => !row.item_id)
+    const known = new Set(base.map((row) => row.id))
+    batch.value = [...base, ...uploaded.filter((row) => !known.has(row.id))]
+    const fresh = new Set(uploaded.map((row) => row.id))
+    recent.value = [
+      ...uploaded.slice().reverse(),
+      ...recent.value.filter((row) => !fresh.has(row.id)),
+    ]
+    await activatePhoto(uploaded[0])
+    notifyUploaded(uploaded.length)
     scrollToResult()
-  } catch {
-    // 请求层已提示错误
+    // 拍完先自动识别一次，用户随后可用一句话指令把物品放到指定位置
+    if (visionReady.value) analyze()
   } finally {
     uploading.value = false
   }
+}
+
+/** el-upload 多选时会逐个触发 change，稍作合并后一次性处理。 */
+function onUploadChange(_file, uploadFiles) {
+  pendingFiles = uploadFiles.map((item) => item.raw).filter(Boolean)
+  clearTimeout(pendingTimer)
+  pendingTimer = setTimeout(() => {
+    const files = pendingFiles
+    pendingFiles = []
+    uploaderRef.value?.clearFiles()
+    if (files.length) handleFiles(files)
+  }, 30)
 }
 
 /** 手机上上传完成后直接滚到第 2 步，避免误以为还停在上传页。 */
@@ -234,18 +406,14 @@ async function scrollToResult() {
   resultPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function uploadRequest(options) {
-  return handleFile(options.file)
-}
-
 function triggerCamera() {
   cameraInput.value?.click()
 }
 
 async function onCameraPick(event) {
-  const file = event.target.files?.[0]
+  const files = Array.from(event.target.files || [])
   event.target.value = ''
-  await handleFile(file)
+  await handleFiles(files)
 }
 
 function retake() {
@@ -259,9 +427,11 @@ async function analyze() {
     ElMessage.warning('视觉模型未配置，请填写 DEEPSEEK_API_KEY（或 VISION_*）后重启后端')
     return
   }
+  const targetId = photo.value.id
   analyzing.value = true
   try {
-    const data = await analyzePhoto(photo.value.id)
+    const data = await analyzePhoto(targetId)
+    if (photo.value?.id !== targetId) return
     photo.value = data.photo
     suggestion.value = data.suggestion
     savedItem.value = null
@@ -284,6 +454,7 @@ async function analyze() {
 async function save() {
   if (!photo.value) return
   await formRef.value.validate()
+  const attachable = batch.value.filter((entry) => !entry.item_id).map((entry) => entry.id)
   saving.value = true
   try {
     const payload = {
@@ -294,14 +465,21 @@ async function save() {
       quantity: Number(form.quantity) || 0,
       color_family: form.color_family,
       tag_names: form.tag_names,
-      photo_ids: [photo.value.id],
+      photo_ids: attachable.length ? attachable : [photo.value.id],
       ai_summary: suggestion.value?.description || '',
     }
     if (form.category_name) payload.category_name = form.category_name
     const item = await createItem(payload)
     savedItem.value = item
+    const linkedIds = new Set(payload.photo_ids)
+    batch.value.forEach((entry) => {
+      if (linkedIds.has(entry.id)) entry.item_id = item.id
+    })
     const row = recent.value.find((entry) => entry.id === photo.value.id)
     if (row) row.item_id = item.id
+    recent.value.forEach((entry) => {
+      if (linkedIds.has(entry.id)) entry.item_id = item.id
+    })
     ElMessage.success('已保存为物品')
   } catch {
     // 请求层已提示错误
@@ -312,6 +490,9 @@ async function save() {
 
 function resetWorkspace() {
   photo.value = null
+  batch.value = []
+  command.value = ''
+  targetItem.value = null
   suggestion.value = null
   savedItem.value = null
   containerTree.value = []
@@ -343,7 +524,9 @@ async function removeCurrent() {
   const id = photo.value.id
   await deletePhoto(id)
   recent.value = recent.value.filter((row) => row.id !== id)
-  resetWorkspace()
+  batch.value = batch.value.filter((row) => row.id !== id)
+  if (batch.value.length) await activatePhoto(batch.value[0])
+  else resetWorkspace()
   ElMessage.success('照片已删除')
 }
 
@@ -401,27 +584,31 @@ onMounted(async () => {
           type="file"
           accept="image/*"
           capture="environment"
+          multiple
           @change="onCameraPick"
         />
 
         <template v-if="!photo">
           <el-upload
+            ref="uploaderRef"
             class="uploader"
             drag
+            multiple
+            :auto-upload="false"
             :show-file-list="false"
-            :http-request="uploadRequest"
+            :on-change="onUploadChange"
             accept="image/jpeg,image/png,image/webp,image/gif"
           >
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="upload-text">拖拽照片到这里，或<em>点击选择</em></div>
-            <div class="upload-hint">支持 JPG / PNG / WEBP / GIF，单张不超过 20MB</div>
+            <div class="upload-hint">支持多选，JPG / PNG / WEBP / GIF，单张不超过 20MB</div>
           </el-upload>
 
           <div class="camera-row">
             <el-button :icon="Camera" :loading="uploading" @click="triggerCamera">
               拍照
             </el-button>
-            <span class="camera-hint">手机端会直接打开后置摄像头</span>
+            <span class="camera-hint">手机端会直接打开后置摄像头，可连续拍摄多张</span>
           </div>
         </template>
 
@@ -438,6 +625,21 @@ onMounted(async () => {
             <span>{{ photo.original_name || '未命名图片' }}</span>
             <span>{{ photo.width }} × {{ photo.height }} · {{ formatSize(photo.size) }}</span>
           </div>
+          <div v-if="batch.length > 1" class="batch-strip">
+            <span class="batch-label">本批次 {{ batch.length }} 张，点击切换识别对象</span>
+            <div class="batch-list">
+              <button
+                v-for="row in batch"
+                :key="row.id"
+                type="button"
+                class="batch-tile"
+                :class="{ active: photo?.id === row.id }"
+                @click="activatePhoto(row)"
+              >
+                <img :src="photoUrl(row)" alt="" />
+              </button>
+            </div>
+          </div>
           <el-tag v-if="attached" size="small" type="success" effect="plain">
             已关联物品 #{{ photo.item_id }}
           </el-tag>
@@ -447,6 +649,9 @@ onMounted(async () => {
               @click="router.push(`/items?edit=${photo.item_id}`)"
             >
               查看物品
+            </el-button>
+            <el-button :icon="Camera" :loading="uploading" @click="triggerCamera">
+              继续拍照
             </el-button>
             <el-button :icon="Camera" @click="retake">重拍</el-button>
             <el-button :icon="UploadFilled" @click="resetWorkspace">更换照片</el-button>
@@ -534,6 +739,35 @@ onMounted(async () => {
             title="也可以跳过识别，直接手动填写信息入库"
           />
 
+          <div class="command-box">
+            <div class="command-head">
+              <span class="command-title"><el-icon><MagicStick /></el-icon>一句话操作</span>
+              <span class="command-hint">例如：放到客厅的药柜</span>
+            </div>
+            <div v-if="targetItem" class="command-target">
+              <span>将作用于已有物品「{{ targetItem.name }}」</span>
+              <el-button text size="small" @click="targetItem = null">取消</el-button>
+            </div>
+            <div class="command-row">
+              <el-input
+                ref="commandInput"
+                v-model="command"
+                placeholder="一句话说明要放到哪里，回车或点执行"
+                maxlength="200"
+                clearable
+                @keyup.enter="runCommand"
+              />
+              <el-button
+                type="primary"
+                :loading="commandRunning"
+                :disabled="analyzing"
+                @click="runCommand"
+              >
+                执行
+              </el-button>
+            </div>
+          </div>
+
           <el-form
             ref="formRef"
             :model="form"
@@ -568,7 +802,7 @@ onMounted(async () => {
                   <el-tree-select
                     v-model="form.container_id"
                     :data="containerTree"
-                    :props="{ label: 'name', children: 'children' }"
+                    :props="{ label: 'display_name', children: 'children' }"
                     node-key="id"
                     check-strictly
                     clearable
@@ -688,7 +922,9 @@ onMounted(async () => {
       <div class="panel-head">
         <div>
           <span class="panel-title">相似物品</span>
-          <p class="similar-sub">按 AI 生成的描述匹配现有物品，可用于避免重复入库</p>
+          <p class="similar-sub">
+            看看是不是其中某一件：选中后，一句话指令会作用于它（例如移动到某个柜子）
+          </p>
         </div>
         <el-tag
           v-if="similarItems.length"
@@ -701,11 +937,11 @@ onMounted(async () => {
       </div>
 
       <div v-if="similarItems.length" class="similar-grid">
-        <button
+        <div
           v-for="item in similarItems"
           :key="item.id"
-          type="button"
           class="similar-card"
+          :class="{ 'is-target': targetItem?.id === item.id }"
           @click="openSimilar(item)"
         >
           <el-image
@@ -732,7 +968,16 @@ onMounted(async () => {
               {{ item.match_reasons.join(' · ') }}
             </div>
           </div>
-        </button>
+          <div class="similar-actions">
+            <el-button
+              size="small"
+              :type="targetItem?.id === item.id ? 'primary' : 'default'"
+              @click.stop="chooseTarget(item)"
+            >
+              {{ targetItem?.id === item.id ? '已选择' : '就是这个' }}
+            </el-button>
+          </div>
+        </div>
       </div>
 
       <div v-else-if="!similarLoading" class="similar-empty">
@@ -901,6 +1146,50 @@ onMounted(async () => {
   min-width: 0;
 }
 
+.batch-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.batch-label {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.batch-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.batch-tile {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 9px;
+  border: 2px solid transparent;
+  background: #f2f6f4;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.batch-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.batch-tile.active {
+  border-color: var(--brand);
+}
+
+.batch-tile:hover {
+  border-color: var(--brand-line);
+}
+
 .preview-actions :deep(.el-button) {
   margin-left: 0;
 }
@@ -973,6 +1262,65 @@ onMounted(async () => {
 
 .manual-tip {
   margin-bottom: 16px;
+}
+
+.command-box {
+  border: 1px solid var(--brand-line);
+  border-radius: 14px;
+  background: #f6fbf9;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.command-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.command-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brand-deep);
+}
+
+.command-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.command-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--brand-deep);
+  background: var(--brand-soft);
+  border-radius: 8px;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+}
+
+.command-row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.command-row :deep(.el-button) {
+  flex: none;
+}
+
+.command-row :deep(.el-input) {
+  flex: 1;
+  min-width: 0;
 }
 
 .result-form {
@@ -1110,6 +1458,22 @@ onMounted(async () => {
   border-color: var(--brand-line);
   background: var(--brand-soft);
   transform: translateY(-1px);
+}
+
+.similar-card.is-target {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  box-shadow: 0 0 0 2px rgba(47, 125, 109, 0.12);
+}
+
+.similar-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.similar-actions :deep(.el-button) {
+  margin-left: 0;
 }
 
 .similar-thumb {

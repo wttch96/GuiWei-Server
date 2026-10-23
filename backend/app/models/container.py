@@ -13,6 +13,7 @@ class Container(db.Model, TimestampMixin):
         db.Integer, db.ForeignKey("containers.id"), nullable=True, index=True
     )
     name = db.Column(db.String(80), nullable=False)
+    nickname = db.Column(db.String(80), default="", nullable=False)
     code = db.Column(db.String(40), default="", nullable=False)
     description = db.Column(db.Text, default="", nullable=False)
     sort_order = db.Column(db.Integer, default=0, nullable=False)
@@ -29,6 +30,11 @@ class Container(db.Model, TimestampMixin):
     )
     items = db.relationship("Item", back_populates="container")
 
+    @property
+    def display_name(self) -> str:
+        """展示名称：有昵称时显示为「柜子A（药柜）」。"""
+        return f"{self.name}（{self.nickname}）" if self.nickname else self.name
+
     def path_names(self) -> list[str]:
         """从顶层容器到当前容器的名称列表。"""
         names: list[str] = []
@@ -36,7 +42,7 @@ class Container(db.Model, TimestampMixin):
         seen: set[int] = set()
         while node is not None and node.id not in seen:
             seen.add(node.id)
-            names.append(node.name)
+            names.append(node.display_name)
             node = node.parent
         return list(reversed(names))
 
@@ -46,6 +52,8 @@ class Container(db.Model, TimestampMixin):
             "room_id": self.room_id,
             "parent_id": self.parent_id,
             "name": self.name,
+            "nickname": self.nickname or "",
+            "display_name": self.display_name,
             "code": self.code,
             "description": self.description,
             "sort_order": self.sort_order,

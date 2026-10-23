@@ -110,7 +110,12 @@ class Item(db.Model, TimestampMixin):
             "room": {"id": self.room.id, "name": self.room.name} if self.room else None,
             "container_id": self.container_id,
             "container": (
-                {"id": self.container.id, "name": self.container.name}
+                {
+                    "id": self.container.id,
+                    "name": self.container.name,
+                    "nickname": self.container.nickname or "",
+                    "display_name": self.container.display_name,
+                }
                 if self.container
                 else None
             ),

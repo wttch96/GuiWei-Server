@@ -21,6 +21,7 @@ class RoomUpdate(APIModel):
 class ContainerIn(APIModel):
     room_id: int
     name: str = Field(min_length=1, max_length=80)
+    nickname: str = Field(default="", max_length=80)
     parent_id: int | None = None
     code: str = ""
     description: str = ""
@@ -29,6 +30,7 @@ class ContainerIn(APIModel):
 
 class ContainerUpdate(APIModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
+    nickname: str | None = Field(default=None, max_length=80)
     code: str | None = None
     description: str | None = None
     sort_order: int | None = None

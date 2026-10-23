@@ -44,6 +44,7 @@ def list_containers(room: str | None = None) -> str:
 def create_container(
     room: str,
     name: str,
+    nickname: str = "",
     parent_path: str = "",
     description: str = "",
     code: str = "",
@@ -52,8 +53,9 @@ def create_container(
 
     Args:
         room: 房间名称或 ID。
-        name: 容器名称，例如「电视柜」「抽屉」「收纳盒 A」。
-        parent_path: 父容器路径，例如 "电视柜" 或 "电视柜/上层抽屉"；为空表示房间顶层。
+        name: 容器名称，例如「柜子A」「抽屉」「收纳盒 A」。
+        nickname: 昵称/别名，例如「药柜」；用于补充说明容器用途，可为空。
+        parent_path: 父容器路径，例如 "柜子A" 或 "柜子A/上层抽屉"；为空表示房间顶层。
         description: 容器描述。
         code: 自定义编号/位置码，可为空。
     """
@@ -65,6 +67,7 @@ def create_container(
             {
                 "room_id": target_room.id,
                 "name": name,
+                "nickname": nickname,
                 "parent_id": parent.id if parent else None,
                 "description": description,
                 "code": code,
@@ -78,6 +81,7 @@ def create_container(
 def update_container(
     container_id: int,
     name: str | None = None,
+    nickname: str | None = None,
     description: str | None = None,
     code: str | None = None,
     sort_order: int | None = None,
@@ -87,6 +91,7 @@ def update_container(
     Args:
         container_id: 容器 ID。
         name: 新名称。
+        nickname: 新昵称/别名。
         description: 新描述。
         code: 新编号。
         sort_order: 排序值。
@@ -94,6 +99,7 @@ def update_container(
     data = {}
     for key, value in {
         "name": name,
+        "nickname": nickname,
         "description": description,
         "code": code,
         "sort_order": sort_order,

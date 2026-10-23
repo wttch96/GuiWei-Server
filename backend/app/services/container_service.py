@@ -1,10 +1,31 @@
 """容器服务：支持无限层级，提供树、路径解析、跨房间移动。"""
+import re
+
 from sqlalchemy import func
 
 from app.extensions import db
 from app.models import Container, Item, Room
 from app.services import log_service
 from app.utils.errors import ApiError
+
+_SUFFIX_RE = re.compile(r"[（(][^（()）]*[）)]$")
+
+
+def _match_container(room_id: int, parent_id: int | None, part: str) -> Container | None:
+    """按名称、昵称或「柜子A（药柜）」式的展示名匹配同级容器。"""
+    query = Container.query.filter_by(room_id=room_id, parent_id=parent_id).order_by(
+        Container.sort_order.asc(), Container.id.asc()
+    )
+    node = query.filter(Container.name == part).first()
+    if node:
+        return node
+    node = query.filter(Container.nickname == part).first()
+    if node:
+        return node
+    stripped = _SUFFIX_RE.sub("", part).strip()
+    if stripped and stripped != part:
+        return query.filter(Container.name == stripped).first()
+    return None
 
 
 def get_container(container_id: int) -> Container:
@@ -74,22 +95,13 @@ def resolve_container(room_id: int, path: str | None = None, container_id: int |
     parts = [p.strip() for p in path.replace("\\", "/").split("/") if p.strip()]
     if len(parts) > 1:
         parent = None
-        for index, part in enumerate(parts):
-            query = Container.query.filter_by(room_id=room_id, name=part)
-            if parent is None:
-                query = query.filter(Container.parent_id.is_(None))
-            else:
-                query = query.filter(Container.parent_id == parent.id)
-            node = query.first()
+        for part in parts:
+            node = _match_container(room_id, parent.id if parent else None, part)
             if not node:
                 raise ApiError(f"容器路径「{path}」不存在", 404)
             parent = node
         return parent
-    node = (
-        Container.query.filter_by(room_id=room_id, name=parts[0])
-        .order_by(Container.sort_order.asc(), Container.id.asc())
-        .first()
-    )
+    node = _match_container(room_id, None, parts[0])
     if not node:
         raise ApiError(f"容器「{path}」不存在", 404)
     return node
@@ -122,6 +134,7 @@ def create_container(data: dict) -> dict:
         room_id=room_id,
         parent_id=parent.id if parent else None,
         name=name,
+        nickname=(data.get("nickname") or "").strip(),
         code=data.get("code") or "",
         description=data.get("description") or "",
         sort_order=int(data.get("sort_order") or 0),
@@ -143,6 +156,8 @@ def update_container(container_id: int, data: dict) -> dict:
             raise ApiError("容器名称不能为空")
         _check_sibling_name(container.room_id, container.parent_id, name, exclude_id=container.id)
         container.name = name
+    if "nickname" in data:
+        container.nickname = (data.get("nickname") or "").strip()
     if "code" in data:
         container.code = data.get("code") or ""
     if "description" in data:

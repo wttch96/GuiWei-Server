@@ -9,6 +9,7 @@ import { listTags } from '../api/tags'
 import { createItem, getItem, updateItem } from '../api/items'
 import { deletePhoto, setPrimaryPhoto, uploadPhoto } from '../api/photos'
 import { COLOR_FAMILIES, STATUS_OPTIONS, photoUrl } from '../utils/format'
+import { downscalePhoto } from '../utils/image'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -33,6 +34,7 @@ const existingPhotos = ref([])
 const newPhotos = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const cameraUploading = ref(false)
 const savedFlag = ref(false)
 
 const form = reactive({
@@ -144,14 +146,20 @@ function triggerCamera() {
 }
 
 async function onCameraPick(event) {
-  const file = event.target.files?.[0]
+  const files = Array.from(event.target.files || [])
   event.target.value = ''
-  if (file) {
-    try {
-      await uploadFile(file)
-    } catch {
-      // 请求层已提示错误
+  if (!files.length) return
+  cameraUploading.value = true
+  try {
+    for (const file of files) {
+      try {
+        await uploadFile(await downscalePhoto(file))
+      } catch {
+        // 单张失败不影响其余照片
+      }
     }
+  } finally {
+    cameraUploading.value = false
   }
 }
 
@@ -257,7 +265,7 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
               <el-tree-select
                 v-model="form.container_id"
                 :data="containerTree"
-                :props="{ label: 'name', children: 'children' }"
+                :props="{ label: 'display_name', children: 'children' }"
                 node-key="id"
                 check-strictly
                 clearable
@@ -406,9 +414,14 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
               </div>
             </el-upload>
 
-            <button type="button" class="photo-add photo-camera" @click="triggerCamera">
+            <button
+              type="button"
+              class="photo-add photo-camera"
+              :disabled="cameraUploading"
+              @click="triggerCamera"
+            >
               <el-icon :size="20"><Camera /></el-icon>
-              <span>拍照</span>
+              <span>{{ cameraUploading ? '上传中…' : '拍照' }}</span>
             </button>
 
             <input
@@ -417,6 +430,7 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
               type="file"
               accept="image/*"
               capture="environment"
+              multiple
               @change="onCameraPick"
             />
           </div>
@@ -425,7 +439,7 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
 
       <div class="photo-tip">
         <el-icon><Picture /></el-icon>
-        支持拍照或上传 JPG / PNG / WEBP / GIF，单张不超过 20MB。上传后可到「拍照识物」做 AI 识别。
+        支持多选上传或连拍多张（JPG / PNG / WEBP / GIF，单张不超过 20MB）。上传后可到「拍照识物」做 AI 识别。
       </div>
     </div>
 
