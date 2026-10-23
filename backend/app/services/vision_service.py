@@ -12,26 +12,49 @@ from pathlib import Path
 import requests
 from flask import current_app
 
-from app.models import Photo
-from app.services import photo_service
+from app.models import COLOR_FAMILIES, Photo
+from app.services import photo_service, prompt_service
 from app.utils.errors import ApiError
 from app.utils.serialize import dumps
 
-VISION_PROMPT = """你是专业的家庭收纳整理助手。请识别照片中的主要物品，判断它是什么、数量，并给出适合的中文大类、标签和收纳位置建议。
+# 识别结果里常见的颜色词 → 固定色系。顺序很重要（先白后米、先灰后银等）。
+_COLOR_HINTS = (
+    ("黑", "黑色"),
+    ("白", "白色"),
+    ("灰", "灰色"),
+    ("银", "灰色"),
+    ("米", "米色"),
+    ("卡其", "米色"),
+    ("驼", "米色"),
+    ("棕", "棕色"),
+    ("咖", "棕色"),
+    ("褐", "棕色"),
+    ("红", "红色"),
+    ("橙", "橙色"),
+    ("黄", "黄色"),
+    ("金", "黄色"),
+    ("绿", "绿色"),
+    ("青", "青色"),
+    ("蓝", "蓝色"),
+    ("紫", "紫色"),
+    ("粉", "粉色"),
+    ("彩", "彩色"),
+    ("花", "彩色"),
+    ("多色", "彩色"),
+)
 
-只输出一个 JSON 对象，不要 Markdown 代码块，不要任何解释。字段如下：
-{
-  "name": "物品名称，简短准确",
-  "description": "外观、材质、用途的简要描述",
-  "category": "物品大类，例如 电子产品/日用品/衣物/证件/药品/工具/食品",
-  "tags": ["3-8 个中文标签"],
-  "quantity": 1,
-  "location_hint": "建议收纳位置，例如 书房/抽屉",
-  "confidence": 0.0,
-  "raw_text": "照片中清晰可见的文字；没有则为空字符串"
-}
 
-要求：quantity 必须是整数；confidence 为 0-1 的小数；不确定时给最可能的判断，不要编造看不清的文字。"""
+def normalize_color_family(value) -> str:
+    """把模型返回的颜色描述收敛到固定色系，无法判断时返回空字符串。"""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text in COLOR_FAMILIES:
+        return text
+    for hint, family in _COLOR_HINTS:
+        if hint in text:
+            return family
+    return "其他"
 
 
 def is_configured() -> bool:
@@ -100,6 +123,7 @@ def _normalize(result: dict, raw_content: str) -> dict:
         "category": str(result.get("category") or "").strip(),
         "tags": tags,
         "quantity": quantity,
+        "color_family": normalize_color_family(result.get("color_family")),
         "location_hint": str(result.get("location_hint") or "").strip(),
         "confidence": max(0.0, min(1.0, confidence)),
         "raw_text": str(result.get("raw_text") or "").strip(),
@@ -128,7 +152,7 @@ def analyze_photo(photo: Photo) -> dict:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": VISION_PROMPT},
+                    {"type": "text", "text": prompt_service.get_vision_prompt()},
                     {"type": "image_url", "image_url": {"url": data_url}},
                 ],
             }
@@ -169,6 +193,7 @@ def analyze_photo(photo: Photo) -> dict:
             "category": "",
             "tags": [],
             "quantity": 1,
+            "color_family": "",
             "location_hint": "",
             "confidence": 0.0,
             "raw_text": content.strip(),

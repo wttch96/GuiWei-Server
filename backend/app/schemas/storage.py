@@ -123,6 +123,7 @@ class PhotoAnalyzeIn(APIModel):
     name: str | None = None
     description: str | None = None
     quantity: int | None = Field(default=None, ge=0)
+    color_family: str | None = Field(default=None, max_length=20)
 
 
 class PhotoSimilarIn(APIModel):
@@ -136,3 +137,7 @@ class PhotoBatchDeleteIn(APIModel):
 class ChatIn(APIModel):
     message: str = Field(min_length=1, max_length=4000)
     session_id: str | None = Field(default=None, max_length=64)
+
+
+class PromptUpdateIn(APIModel):
+    content: str = Field(min_length=20, max_length=20000)

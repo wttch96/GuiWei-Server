@@ -126,6 +126,7 @@ def analyze_photo(photo_id: int):
             "description": body.description or suggestion.get("description") or "",
             "ai_summary": suggestion.get("description") or "",
             "quantity": body.quantity if body.quantity is not None else suggestion.get("quantity", 1),
+            "color_family": body.color_family or suggestion.get("color_family") or "",
             "photo_ids": [photo.id],
         }
         created = item_service.create_item(data)

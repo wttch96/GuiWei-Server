@@ -7,4 +7,8 @@ export const getSessionMessages = (sessionId) =>
 export const getSessions = () => request.get('/ai/sessions')
 export const removeSession = (sessionId) =>
   request.delete(`/ai/sessions/${sessionId}`)
+export const getPrompts = () => request.get('/ai/prompts')
+export const updatePrompt = (key, content) =>
+  request.put(`/ai/prompts/${key}`, { content })
+export const resetPrompt = (key) => request.post(`/ai/prompts/${key}/reset`)
 export const getTools = () => request.get('/ai/tools')

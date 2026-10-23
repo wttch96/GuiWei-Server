@@ -7,6 +7,7 @@ import {
   Collection,
   DataBoard,
   Document,
+  EditPen,
   House,
   MagicStick,
   Picture,
@@ -30,6 +31,7 @@ const menus = [
   { path: '/recognize', title: '拍照识物', icon: Camera },
   { path: '/photos', title: '图片管理', icon: Picture },
   { path: '/ai', title: 'AI 收纳助手', icon: MagicStick },
+  { path: '/ai/prompts', title: 'AI 提示词', icon: EditPen },
   { path: '/logs', title: '操作日志', icon: Document },
 ]
 

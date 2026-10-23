@@ -6,11 +6,12 @@
 
 - **房间 / 容器 / 物品三级收纳**：容器支持无限层级嵌套，物品可移动、搜索、借出/用完/丢弃等状态管理。
 - **分类与标签**：每件物品有且只有一个大类，可拥有多个标签。
-- **色系（可选）**：物品可标记黑色、白色、蓝色等色系，支持按色系筛选，也可在后台或 AI 对话中自定义取值。
+- **色系（可选）**：物品可标记黑色、白色、蓝色等色系，支持按色系筛选，也可在后台或 AI 对话中自定义取值；拍照识图会识别主体颜色并自动填入色系。
 - **AI 收纳助手**：自然语言查询与操作，例如「把电视遥控器放到客厅/电视柜/上层抽屉」「盘点一下书房」。AI 只能通过 28 个工具读写数据，所有改动真实落库并记录操作日志。回复支持 Markdown；涉及具体物品时以卡片展示图片、位置、分类、标签、数量与状态。
+- **可编辑提示词**：对话系统提示词与拍照识图提示词都可以在后台「AI 提示词」页编辑、保存、恢复默认，保存后立即生效，无需重启或改 `.env`。
 - **Token 统计**：每次模型调用都会记录输入/输出 token；工具调用展示所属轮次的 token 消耗，每条回复显示本轮合计，页面顶部显示当前会话累计，会话列表显示每个会话的总量。
 - **会话管理**：会话列表可查看、切换、删除；「新建会话」立即开启独立上下文，历史会话仍保留在服务端。
-- **拍照识物**：上传照片，经 DeepSeek 视觉模型（`deepseek-flash`）识别名称、描述、分类、标签、数量与建议位置，确认后一键入库。
+- **拍照识物**：上传照片，经 DeepSeek 视觉模型（`deepseek-flash`）识别名称、描述、分类、标签、数量、色系与建议位置，确认后一键入库。
 - **以图找相似**：识图结果会立即与已有物品做本地描述匹配，按相似度展示「名称 / 分类 / 标签 / 描述」相近的物品，并在卡片上给出匹配原因，避免重复入库。
 - **图片管理**：独立的文件管理页，可按文件名、关联状态筛选，查看占用空间、预览大图、下载、单张或批量删除已上传的图片。
 - **管理后台**：概览统计、房间与容器树、物品筛选、分类/标签维护、AI 对话（Markdown 渲染、物品卡片、工具调用轨迹）、拍照识物、操作日志；支持手机浏览器访问与调用手机摄像头。
@@ -40,7 +41,7 @@ guiwei-server/
 │   │   ├── utils/          # 响应、认证、序列化、错误
 │   │   ├── seed.py         # 演示数据
 │   │   └── __init__.py     # 应用工厂、认证守卫、CLI
-│   ├── tests/              # pytest（41 项）
+│   ├── tests/              # pytest（43 项）
 │   ├── instance/           # SQLite 数据库（自动生成）
 │   ├── uploads/            # 图片文件（自动生成）
 │   ├── .env.example
@@ -163,7 +164,7 @@ DEEPSEEK_API_KEY=sk-...
 DEEPSEEK_MODEL=deepseek-flash
 ```
 
-重启后端后，后台「AI 收纳助手」即可使用。系统提示词要求模型：只通过工具操作、名称不唯一时先询问、删除操作必须显式 `confirm=true`、优先用 `move_item` 处理「把某物放到某处」。
+重启后端后，后台「AI 收纳助手」即可使用。默认系统提示词要求模型：只通过工具操作、名称不唯一时先询问、删除操作必须显式 `confirm=true`、优先用 `move_item` 处理「把某物放到某处」、创建物品时只补全有依据的分类/标签/色系。提示词可在后台「AI 提示词」页直接编辑，见下文。
 
 ### 拍照识图
 
@@ -185,6 +186,8 @@ VISION_MODEL=模型名称
 ```
 
 `VISION_API_BASE` 会自动补 `/chat/completions`。未配置任何视觉密钥时，识图接口返回 503，但上传、关联、手动入库仍可正常使用。
+
+识图结果包含 `color_family` 字段。模型返回「深蓝色」「银灰」「米白」等描述时，后端会收敛到固定色系（蓝色 / 灰色 / 白色）；多色或花纹识别为「彩色」，无法判断时为「其他」。前端识图页会自动填充色系，保存物品时一并入库。
 
 ### 以图找相似
 
@@ -223,6 +226,24 @@ GET /api/photos?page=1&page_size=24&q=遥控器&status=attached&sort=newest
 ### 色系
 
 物品的 `color_family` 是可选字符串（最长 20 字），建议值包括黑、白、灰、米、棕、红、橙、黄、绿、青、蓝、紫、粉、彩色、其他。创建/更新物品时传 `color_family` 即可，列表接口支持 `?color_family=黑色` 筛选，搜索关键词也会匹配色系。旧数据库启动时会自动补列（`ALTER TABLE items ADD COLUMN color_family ...`），无需手动迁移。
+
+### AI 提示词
+
+后台「AI 提示词」页（`/ai/prompts`）可以编辑两套提示词：
+
+- **AI 对话系统提示词**：控制助手如何理解需求、调用工具、补全分类/标签/色系以及组织回复。支持 `{today}` 占位符，会在每次请求前替换为当天日期。
+- **拍照识图提示词**：控制视觉模型输出的 JSON 字段与判断规则。默认要求输出 `name`、`description`、`category`、`tags`、`quantity`、`color_family`、`location_hint`、`confidence`、`raw_text`。
+
+保存的内容写入 `ai_prompts` 表（`key` 为 `chat` / `vision`），下次请求立即读取，无需重启服务；未保存时回退到代码内置默认值。恢复默认会删除对应覆盖记录。
+
+```http
+GET  /api/ai/prompts
+PUT  /api/ai/prompts/chat        {"content":"新的系统提示词……"}
+POST /api/ai/prompts/chat/reset
+POST /api/ai/prompts/vision/reset
+```
+
+`GET /api/ai/prompts` 返回每个提示词的 `content`、`default_content`、`is_custom`、`updated_at` 与长度上限；`PUT` 的内容需为 20～20000 字符，未知 key 返回 404。
 
 ## Token 统计与会话
 
@@ -285,7 +306,7 @@ Authorization: Bearer <token>
 | 分类 | `GET/POST /api/categories`、`PUT/DELETE /api/categories/<id>` |
 | 标签 | `GET/POST /api/tags`、`PUT/DELETE /api/tags/<id>` |
 | 照片 | `POST /api/photos`（multipart）、`GET /api/photos`（分页；带 `item_id` 时返回数组）、`GET /api/photos/<id>/file`（`download=1` 强制下载）、`POST /api/photos/<id>/attach`、`POST /api/photos/<id>/primary`、`DELETE /api/photos/<id>`、`POST /api/photos/batch-delete`、`POST /api/photos/<id>/analyze`、`POST /api/photos/<id>/similar` |
-| AI | `POST /api/ai/chat`、`GET /api/ai/status`、`GET /api/ai/tools`、`GET /api/ai/sessions`、`GET /api/ai/sessions/<id>/messages`、`DELETE /api/ai/sessions/<id>` |
+| AI | `POST /api/ai/chat`、`GET /api/ai/status`、`GET /api/ai/tools`、`GET /api/ai/sessions`、`GET /api/ai/sessions/<id>/messages`、`DELETE /api/ai/sessions/<id>`、`GET /api/ai/prompts`、`PUT /api/ai/prompts/<key>`、`POST /api/ai/prompts/<key>/reset` |
 | 其它 | `GET /api/stats/overview`、`GET /api/search?q=`、`GET /api/logs`、`GET /api/health` |
 
 ### 示例
@@ -378,7 +399,7 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-测试使用临时 SQLite 与临时上传目录，不会污染开发数据。覆盖认证、房间/容器/物品 CRUD、色系属性、照片上传与主图切换、图片库分页与批量删除、AI 工具调用、AI 对话循环、token 统计与会话管理、识图结果解析、识图后的相似物品匹配等。
+测试使用临时 SQLite 与临时上传目录，不会污染开发数据。覆盖认证、房间/容器/物品 CRUD、色系属性、照片上传与主图切换、图片库分页与批量删除、AI 工具调用、AI 对话循环、token 统计与会话管理、提示词编辑与恢复默认、识图结果解析与色系归一化、识图后的相似物品匹配等。
 
 ## iOS 迁移说明
 
@@ -388,7 +409,7 @@ python -m pytest -q
 2. 使用与后台完全相同的 JSON 接口；字段命名已统一为 snake_case。
 3. 图片展示使用 `/api/photos/<id>/file?token=<token>`（或自行带 Header 下载）。
 4. 拍照上传使用 multipart `file`，可选 `item_id`；识图调用 `POST /api/photos/<id>/analyze`，响应中的 `similar_items` 可直接用于「是否已有类似物品」的提示，也可稍后调用 `POST /api/photos/<id>/similar` 重新匹配。
-5. AI 对话调用 `POST /api/ai/chat`，保存返回的 `session_id` 即可继续上下文；响应中的 `usage` / `session_usage` 可直接展示 token 消耗，会话列表与删除使用 `/api/ai/sessions`。
+5. AI 对话调用 `POST /api/ai/chat`，保存返回的 `session_id` 即可继续上下文；响应中的 `usage` / `session_usage` 可直接展示 token 消耗，会话列表与删除使用 `/api/ai/sessions`；提示词读取与编辑使用 `/api/ai/prompts`。
 
 ## 常见问题
 

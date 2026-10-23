@@ -221,6 +221,7 @@ def test_analyze_photo_creates_item(client, auth, png_bytes, monkeypatch):
         "category": "电子产品",
         "tags": ["常用", "充电"],
         "quantity": 1,
+        "color_family": "白色",
         "location_hint": "书房/抽屉",
         "confidence": 0.9,
         "raw_text": "",
@@ -244,6 +245,7 @@ def test_analyze_photo_creates_item(client, auth, png_bytes, monkeypatch):
     assert data["item"]["name"] == "蓝牙耳机"
     assert data["item"]["category"]["name"] == "电子产品"
     assert {tag["name"] for tag in data["item"]["tags"]} == {"常用", "充电"}
+    assert data["item"]["color_family"] == "白色"
     assert data["item"]["photo_count"] == 1
     assert data["photo"]["has_ai_result"] is True
 
@@ -406,6 +408,20 @@ def test_vision_uses_deepseek_multimodal_payload(
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     blocks = captured["payload"]["messages"][0]["content"]
     assert blocks[0]["type"] == "text"
+    assert "color_family" in blocks[0]["text"]
     assert blocks[1]["type"] == "image_url"
     assert blocks[1]["image_url"]["url"].startswith("data:image/png;base64,")
     assert result["name"] == "测试物品"
+
+
+def test_normalize_color_family():
+    from app.services.vision_service import normalize_color_family
+
+    assert normalize_color_family("黑色") == "黑色"
+    assert normalize_color_family("深蓝色") == "蓝色"
+    assert normalize_color_family("银灰") == "灰色"
+    assert normalize_color_family("米白") == "白色"
+    assert normalize_color_family("多色花纹") == "彩色"
+    assert normalize_color_family("透明") == "其他"
+    assert normalize_color_family("") == ""
+    assert normalize_color_family(None) == ""

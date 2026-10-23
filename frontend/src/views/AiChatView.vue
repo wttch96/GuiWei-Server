@@ -1,10 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Box,
   ChatDotRound,
   Delete,
+  EditPen,
   Location,
   MagicStick,
   Plus,
@@ -25,6 +27,7 @@ import { formatDate, photoUrl, prettyJson, statusInfo } from '../utils/format'
 import MarkdownBody from '../components/MarkdownBody.vue'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const SESSION_KEY = 'guiwei_ai_session'
 const suggestions = [
@@ -215,6 +218,12 @@ function toolOk(call) {
   return !(call?.result && call.result.ok === false)
 }
 
+/** 折叠头部只保留数量信息，失败时补充失败个数。 */
+function traceSummary(calls) {
+  const failed = calls.filter((call) => !toolOk(call)).length
+  return failed ? `${failed} 个失败` : '全部成功'
+}
+
 onMounted(async () => {
   await loadStatus()
   await loadHistory()
@@ -244,6 +253,7 @@ onMounted(async () => {
         </el-tooltip>
         <el-button :icon="ChatDotRound" @click="openSessions">会话</el-button>
         <el-button :icon="Tools" @click="toolsVisible = true">可用工具 {{ tools.length }}</el-button>
+        <el-button :icon="EditPen" @click="router.push('/ai/prompts')">提示词</el-button>
         <el-button type="primary" plain :icon="Plus" @click="newSession">新建会话</el-button>
       </div>
     </div>
@@ -365,38 +375,37 @@ onMounted(async () => {
               </div>
 
               <div v-if="message.tool_calls?.length" class="trace">
-                <div class="trace-head">
-                  <el-icon><Tools /></el-icon>
-                  调用 {{ message.tool_calls.length }} 个工具
-                </div>
                 <el-collapse class="trace-collapse">
-                  <el-collapse-item
-                    v-for="(call, callIndex) in message.tool_calls"
-                    :key="callIndex"
-                    :name="`${index}-${callIndex}`"
-                  >
+                  <el-collapse-item :name="`trace-${index}`">
                     <template #title>
-                      <span class="trace-name mono">{{ call.tool }}</span>
-                      <el-tag
-                        size="small"
-                        effect="plain"
-                        :type="toolOk(call) ? 'success' : 'danger'"
-                        class="trace-tag"
-                      >
-                        {{ toolOk(call) ? '成功' : '失败' }}
-                      </el-tag>
-                      <span
-                        v-if="call.usage?.total_tokens"
-                        class="trace-token"
-                        title="该工具调用所在的模型轮次 token 消耗"
-                      >
-                        {{ formatTokens(call.usage.total_tokens) }} tokens
+                      <span class="trace-title">
+                        <el-icon><Tools /></el-icon>
+                        调用了 {{ message.tool_calls.length }} 个工具
+                      </span>
+                      <span class="trace-summary">
+                        {{ traceSummary(message.tool_calls) }}
                       </span>
                     </template>
-                    <div class="trace-label">参数</div>
-                    <pre class="trace-code">{{ prettyJson(call.args) }}</pre>
-                    <div class="trace-label">结果</div>
-                    <pre class="trace-code">{{ prettyJson(call.result) }}</pre>
+                    <div
+                      v-for="(call, callIndex) in message.tool_calls"
+                      :key="callIndex"
+                      class="trace-call"
+                    >
+                      <div class="trace-call-head">
+                        <span class="trace-name mono">{{ call.tool }}</span>
+                        <el-tag
+                          size="small"
+                          effect="plain"
+                          :type="toolOk(call) ? 'success' : 'danger'"
+                        >
+                          {{ toolOk(call) ? '成功' : '失败' }}
+                        </el-tag>
+                      </div>
+                      <div class="trace-label">参数</div>
+                      <pre class="trace-code">{{ prettyJson(call.args) }}</pre>
+                      <div class="trace-label">结果</div>
+                      <pre class="trace-code">{{ prettyJson(call.result) }}</pre>
+                    </div>
                   </el-collapse-item>
                 </el-collapse>
               </div>
@@ -833,17 +842,8 @@ onMounted(async () => {
   border: 1px solid var(--line);
   border-radius: 11px;
   background: #fcfdfd;
-  padding: 9px 12px;
+  padding: 0 12px;
   max-width: 100%;
-}
-
-.trace-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--muted);
-  margin-bottom: 2px;
 }
 
 .trace-collapse {
@@ -851,11 +851,16 @@ onMounted(async () => {
 }
 
 .trace-collapse :deep(.el-collapse-item__header) {
-  height: 32px;
+  height: 36px;
   border-bottom: none;
-  font-size: 12px;
+  font-size: 11.5px;
+  color: var(--muted);
   background: transparent;
-  gap: 8px;
+  gap: 7px;
+}
+
+.trace-collapse :deep(.el-collapse-item__arrow) {
+  margin-left: 4px;
 }
 
 .trace-collapse :deep(.el-collapse-item__wrap) {
@@ -864,23 +869,39 @@ onMounted(async () => {
 }
 
 .trace-collapse :deep(.el-collapse-item__content) {
-  padding-bottom: 8px;
+  padding: 2px 0 10px;
+}
+
+.trace-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trace-summary {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.trace-call + .trace-call {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.trace-call-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 .trace-name {
   color: var(--brand-deep);
   font-weight: 600;
-}
-
-.trace-tag {
-  margin-left: 8px;
-}
-
-.trace-token {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: var(--muted);
-  font-weight: 500;
+  font-size: 12px;
 }
 
 .msg-usage {

@@ -11,27 +11,9 @@ from flask import current_app
 
 from app.extensions import db
 from app.models import AiMessage
-from app.services import vision_service
+from app.services import prompt_service, vision_service
 from app.utils.errors import ApiError
 from app.utils.serialize import dumps, iso, loads
-
-SYSTEM_PROMPT = """你是「归位」智能收纳助手，负责管理一个家庭的物品收纳数据库。
-
-数据模型：
-- 房间 Room → 容器 Container（可多级嵌套）→ 物品 Item
-- 每个物品只属于一个分类 Category，可以有多个标签 Tag
-- 位置统一表示为「房间 / 一级容器 / 二级容器」
-
-工作规则：
-1. 所有数据读取和修改都必须通过工具完成。禁止凭空编造 ID、房间名、容器名或物品。
-2. 用户只给出名称时，先用查询工具解析出房间/容器/物品；名称不唯一时先询问用户。
-3. 创建物品时尽量补全分类和标签；用户没说的信息不要随意编造。
-4. 删除房间、容器、物品属于危险操作：只有用户明确表达删除意图时才执行，且 confirm 必须传 true。执行前先查询确认对象。
-5. 可以连续调用多个工具完成多步操作。最后用简洁的中文总结做了什么、结果如何。
-6. 用户说“把某物放到某处”时，优先使用 move_item；如果物品尚不存在，则用 create_item。
-7. 不要向用户展示工具 JSON 原文，用自然语言汇报即可。
-8. 回答使用 Markdown 排版（短段落、列表、加粗、必要时表格），不要输出 HTML。
-9. 今天是 {today}。"""
 
 
 def _today() -> str:
@@ -323,7 +305,9 @@ def chat(message: str, session_id: str | None = None) -> dict:
     tool_map = {tool.name: tool for tool in tools}
 
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT.format(today=_today())),
+        SystemMessage(
+            content=prompt_service.get_chat_prompt().replace("{today}", _today())
+        ),
         *_load_history(session_id),
         HumanMessage(content=message),
     ]

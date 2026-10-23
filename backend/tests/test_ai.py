@@ -189,6 +189,48 @@ def test_chat_tracks_tokens_and_manages_sessions(client, auth, app, monkeypatch)
     assert client.delete("/api/ai/sessions/tokens", headers=auth).status_code == 404
 
 
+def test_prompts_are_editable_and_used(client, auth, app, monkeypatch):
+    app.config["DEEPSEEK_API_KEY"] = "sk-test"
+
+    rows = client.get("/api/ai/prompts", headers=auth).get_json()["data"]
+    by_key = {row["key"]: row for row in rows}
+    assert set(by_key) == {"chat", "vision"}
+    assert "{today}" in by_key["chat"]["content"]
+    assert "color_family" in by_key["vision"]["content"]
+    assert by_key["chat"]["is_custom"] is False
+
+    custom = "你是测试助手。今天是 {today}，只回答 OK。"
+    response = client.put(
+        "/api/ai/prompts/chat", json={"content": custom}, headers=auth
+    )
+    assert response.status_code == 200, response.get_json()
+    data = response.get_json()["data"]
+    assert data["is_custom"] is True
+    assert data["content"] == custom
+
+    model = FakeModel([AIMessage(content="OK")])
+    monkeypatch.setattr(ai_service, "_build_llm", lambda: model)
+    response = client.post(
+        "/api/ai/chat", json={"message": "你好", "session_id": "prompt"}, headers=auth
+    )
+    assert response.status_code == 200, response.get_json()
+    system_text = model.received[0][0].content
+    assert "测试助手" in system_text
+    assert "{today}" not in system_text
+
+    reset = client.post("/api/ai/prompts/chat/reset", headers=auth)
+    assert reset.status_code == 200
+    assert reset.get_json()["data"]["is_custom"] is False
+    assert "归位" in reset.get_json()["data"]["content"]
+
+    assert client.put(
+        "/api/ai/prompts/unknown", json={"content": "x" * 30}, headers=auth
+    ).status_code == 404
+    assert client.put(
+        "/api/ai/prompts/chat", json={"content": "太短"}, headers=auth
+    ).status_code == 422
+
+
 def test_ai_status(client, auth):
     data = client.get("/api/ai/status", headers=auth).get_json()["data"]
     assert "chat_configured" in data

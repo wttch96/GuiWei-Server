@@ -26,7 +26,7 @@ import {
   listPhotos,
   uploadPhoto,
 } from '../api/photos'
-import { photoUrl } from '../utils/format'
+import { photoUrl, COLOR_FAMILIES } from '../utils/format'
 
 const router = useRouter()
 
@@ -56,6 +56,7 @@ const form = reactive({
   category_name: '',
   tag_names: [],
   quantity: 1,
+  color_family: '',
   room_id: null,
   container_id: null,
 })
@@ -114,6 +115,7 @@ function fillForm(data) {
   form.category_name = data.category || ''
   form.tag_names = Array.isArray(data.tags) ? [...data.tags] : []
   form.quantity = Number.isFinite(data.quantity) ? data.quantity : 1
+  form.color_family = data.color_family || ''
 }
 
 async function applyLocationHint(hint) {
@@ -199,6 +201,7 @@ async function selectPhoto(row) {
       category_name: '',
       tag_names: [],
       quantity: 1,
+      color_family: '',
       room_id: null,
       container_id: null,
     })
@@ -289,6 +292,7 @@ async function save() {
       container_id: form.container_id || null,
       description: form.description,
       quantity: Number(form.quantity) || 0,
+      color_family: form.color_family,
       tag_names: form.tag_names,
       photo_ids: [photo.value.id],
       ai_summary: suggestion.value?.description || '',
@@ -319,6 +323,7 @@ function resetWorkspace() {
     category_name: '',
     tag_names: [],
     quantity: 1,
+    color_family: '',
     room_id: null,
     container_id: null,
   })
@@ -496,6 +501,9 @@ onMounted(async () => {
             </div>
             <div class="ai-facts">
               <span v-if="suggestion.category" class="fact">分类 · {{ suggestion.category }}</span>
+              <span v-if="suggestion.color_family" class="fact">
+                色系 · {{ suggestion.color_family }}
+              </span>
               <span v-if="suggestion.location_hint" class="fact">
                 建议位置 · {{ suggestion.location_hint }}
               </span>
@@ -616,9 +624,32 @@ onMounted(async () => {
               </el-col>
             </el-row>
 
-            <el-form-item label="数量">
-              <el-input-number v-model="form.quantity" :min="0" :max="999999" />
-            </el-form-item>
+            <el-row :gutter="14">
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="色系">
+                  <el-select
+                    v-model="form.color_family"
+                    filterable
+                    allow-create
+                    clearable
+                    placeholder="识别后自动填充，也可手动选择"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="color in COLOR_FAMILIES"
+                      :key="color"
+                      :label="color"
+                      :value="color"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="数量">
+                  <el-input-number v-model="form.quantity" :min="0" :max="999999" />
+                </el-form-item>
+              </el-col>
+            </el-row>
 
             <el-form-item label="描述">
               <el-input

@@ -56,6 +56,12 @@ const routes = [
         meta: { title: 'AI 收纳助手' },
       },
       {
+        path: 'ai/prompts',
+        name: 'ai-prompts',
+        component: () => import('../views/AiPromptsView.vue'),
+        meta: { title: 'AI 提示词' },
+      },
+      {
         path: 'recognize',
         name: 'recognize',
         component: () => import('../views/PhotoRecognizeView.vue'),

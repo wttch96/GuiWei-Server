@@ -2,8 +2,8 @@
 from flask import Blueprint, g
 
 from app.schemas.common import parse_body
-from app.schemas.storage import ChatIn
-from app.services import ai_service
+from app.schemas.storage import ChatIn, PromptUpdateIn
+from app.services import ai_service, prompt_service
 from app.tools import get_tools
 from app.utils.responses import ok
 
@@ -36,6 +36,23 @@ def session_messages(session_id: str):
 @bp.delete("/sessions/<session_id>")
 def delete_session(session_id: str):
     return ok(ai_service.delete_session(session_id[:64]))
+
+
+@bp.get("/prompts")
+def prompts():
+    """可编辑的对话 / 识图提示词。"""
+    return ok(prompt_service.list_prompts())
+
+
+@bp.put("/prompts/<key>")
+def update_prompt(key: str):
+    body = parse_body(PromptUpdateIn)
+    return ok(prompt_service.update_prompt(key, body.content))
+
+
+@bp.post("/prompts/<key>/reset")
+def reset_prompt(key: str):
+    return ok(prompt_service.reset_prompt(key))
 
 
 @bp.get("/tools")
