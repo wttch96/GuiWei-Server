@@ -1,0 +1,5 @@
+# 可选：多物品检测与切割（YOLOE 开放词汇 + 实例分割）
+# 安装：pip install -r requirements-yolo.txt
+# 首次检测会自动下载模型权重（默认 yoloe-11l-seg.pt，约 68MB）和 CLIP 文本编码器（约 340MB）。
+# Apple Silicon 会自动使用 mps 推理；也可显式设置 YOLO_DEVICE=mps/cpu。
+ultralytics>=8.4

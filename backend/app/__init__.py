@@ -104,6 +104,18 @@ def _ensure_schema() -> None:
             )
             db.session.commit()
 
+    if "photos" in inspector.get_table_names():
+        # 多物品检测的裁切图标记：未入库前不在图片库展示，并会被 TTL 清理
+        photo_columns = {column["name"] for column in inspector.get_columns("photos")}
+        if "is_temp" not in photo_columns:
+            db.session.execute(
+                text("ALTER TABLE photos ADD COLUMN is_temp BOOLEAN NOT NULL DEFAULT 0")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_photos_is_temp ON photos (is_temp)")
+            )
+            db.session.commit()
+
     if "ai_messages" in inspector.get_table_names():
         message_columns = {
             column["name"] for column in inspector.get_columns("ai_messages")

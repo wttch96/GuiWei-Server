@@ -9,7 +9,13 @@ from app.schemas.storage import (
     PhotoBatchDeleteIn,
     PhotoSimilarIn,
 )
-from app.services import item_service, photo_service, similar_service, vision_service
+from app.services import (
+    detection_service,
+    item_service,
+    photo_service,
+    similar_service,
+    vision_service,
+)
 from app.utils.errors import ApiError
 from app.utils.responses import ok, paged
 from app.utils.serialize import loads
@@ -65,7 +71,9 @@ def photo_file(photo_id: int):
         as_attachment=as_attachment,
         download_name=photo.original_name or f"photo-{photo.id}",
     )
-    response.headers["Cache-Control"] = "private, max-age=3600"
+    # 必须让浏览器每次回源校验：SQLite 会复用已删除照片的最大 ID，
+    # 若允许长时间强缓存，新照片会显示成旧照片（ETag/Last-Modified 仍可命中 304）。
+    response.headers["Cache-Control"] = "private, no-cache"
     return response
 
 
@@ -90,6 +98,15 @@ def delete_photo(photo_id: int):
 def batch_delete_photos():
     body = parse_body(PhotoBatchDeleteIn)
     return ok(photo_service.delete_photos(body.ids))
+
+
+@bp.post("/photos/<int:photo_id>/detect")
+def detect_photo(photo_id: int):
+    """用 YOLOE/YOLO-World 检测并裁切照片中的多件物品。"""
+    photo = photo_service.get_photo(photo_id)
+    detections = detection_service.detect_photo(photo)
+    limit = int(current_app.config.get("YOLO_MAX_OBJECTS") or 12)
+    return ok({"photo": photo.to_dict(), "detections": detections, "limit": limit})
 
 
 @bp.post("/photos/<int:photo_id>/analyze")

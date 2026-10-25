@@ -1,6 +1,6 @@
 """照片存储与文件管理。文件名使用 UUID，按年月分目录。"""
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -105,10 +105,37 @@ def save_upload(file_storage, item_id: int | None = None) -> Photo:
 
 
 def list_photos(item_id: int | None = None) -> list[dict]:
-    query = Photo.query
+    # 临时裁切图（检测中间产物）不进入最近上传等普通列表
+    query = Photo.query.filter(Photo.is_temp.is_(False))
     if item_id is not None:
         query = query.filter_by(item_id=int(item_id))
     return [row.to_dict() for row in query.order_by(Photo.id.desc()).all()]
+
+
+def cleanup_temp_photos(ttl_minutes: int = 60) -> int:
+    """删除超过保留时间且未入库的检测裁切图（文件 + 记录）。"""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max(1, int(ttl_minutes)))
+    rows = (
+        Photo.query.filter(
+            Photo.is_temp.is_(True),
+            Photo.item_id.is_(None),
+            Photo.created_at < cutoff,
+        )
+        .all()
+    )
+    removed = 0
+    for photo in rows:
+        try:
+            path = photo_abs_path(photo)
+            if path.exists():
+                path.unlink()
+        except (OSError, ApiError):
+            pass
+        db.session.delete(photo)
+        removed += 1
+    if removed:
+        db.session.commit()
+    return removed
 
 
 PHOTO_SORTS = {
@@ -120,15 +147,15 @@ PHOTO_SORTS = {
 
 
 def photo_summary() -> dict:
-    """图片库总览：文件数量、占用空间、未关联数量。"""
+    """图片库总览：文件数量、占用空间、未关联数量（不含临时裁切图）。"""
     count, size = db.session.query(
         func.count(Photo.id), func.coalesce(func.sum(Photo.size), 0)
-    ).one()
+    ).filter(Photo.is_temp.is_(False)).one()
     orphan_count, orphan_size = (
         db.session.query(
             func.count(Photo.id), func.coalesce(func.sum(Photo.size), 0)
         )
-        .filter(Photo.item_id.is_(None))
+        .filter(Photo.item_id.is_(None), Photo.is_temp.is_(False))
         .one()
     )
     return {
@@ -149,7 +176,9 @@ def list_photo_page(
     """文件管理用的分页列表：附带物品名称，并省略识图全文。"""
     page = max(1, int(page or 1))
     page_size = min(100, max(1, int(page_size or 24)))
-    query = Photo.query.options(joinedload(Photo.item))
+    query = Photo.query.options(joinedload(Photo.item)).filter(
+        Photo.is_temp.is_(False)
+    )
 
     term = (q or "").strip()
     if term:

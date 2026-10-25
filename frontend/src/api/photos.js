@@ -26,3 +26,7 @@ export const analyzePhoto = (photoId, data = {}) =>
 
 export const findSimilarItems = (photoId, data = {}) =>
   request.post(`/photos/${photoId}/similar`, data ?? {}, { timeout: 30000 })
+
+/** YOLO-World 多物品检测与裁切，首次运行会下载模型，耗时可能较长。 */
+export const detectPhoto = (photoId) =>
+  request.post(`/photos/${photoId}/detect`, {}, { timeout: 180000 })

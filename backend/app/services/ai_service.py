@@ -4,9 +4,11 @@
 不依赖 AgentExecutor 的版本差异，同时保留完整的工具调用轨迹。
 """
 import json
+import time
 import uuid
 from datetime import date
 
+import requests
 from flask import current_app
 
 from app.extensions import db
@@ -25,6 +27,8 @@ def chat_configured() -> bool:
 
 
 def status() -> dict:
+    from app.services import detection_service
+
     cfg = current_app.config
     return {
         "chat_configured": chat_configured(),
@@ -32,7 +36,66 @@ def status() -> dict:
         "api_base": cfg.get("DEEPSEEK_API_BASE") if chat_configured() else None,
         "max_iterations": cfg.get("AI_MAX_ITERATIONS"),
         "vision": vision_service.status(),
+        "detection": detection_service.status(),
     }
+
+
+# 余额查询结果短缓存，避免每次刷新页面都请求 DeepSeek
+_BALANCE_TTL = 60
+_balance_cache: dict = {"at": 0.0, "data": None}
+
+
+def balance(force: bool = False) -> dict:
+    """查询 DeepSeek 账户余额（GET /user/balance）。失败时返回带 error 的结果。"""
+    if not chat_configured():
+        return {
+            "configured": False,
+            "available": None,
+            "currency": "CNY",
+            "total": None,
+            "error": "未配置 DEEPSEEK_API_KEY",
+        }
+
+    now = time.time()
+    cached = _balance_cache["data"]
+    if not force and cached and now - _balance_cache["at"] < _BALANCE_TTL:
+        return cached
+
+    cfg = current_app.config
+    base = (cfg.get("DEEPSEEK_API_BASE") or "https://api.deepseek.com").rstrip("/")
+    try:
+        response = requests.get(
+            f"{base}/user/balance",
+            headers={"Authorization": f"Bearer {cfg['DEEPSEEK_API_KEY']}"},
+            timeout=8,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        data = {
+            "configured": True,
+            "available": None,
+            "currency": "CNY",
+            "total": None,
+            "error": f"余额查询失败：{str(exc)[:120]}",
+        }
+        _balance_cache.update(at=now, data=data)
+        return data
+
+    infos = payload.get("balance_infos") or []
+    primary = infos[0] if isinstance(infos, list) and infos else {}
+    data = {
+        "configured": True,
+        "available": bool(payload.get("is_available")),
+        "currency": primary.get("currency") or "CNY",
+        "total": primary.get("total_balance"),
+        "granted": primary.get("granted_balance"),
+        "topped_up": primary.get("topped_up_balance"),
+        "balances": infos if isinstance(infos, list) else [],
+        "error": None,
+    }
+    _balance_cache.update(at=now, data=data)
+    return data
 
 
 def _empty_usage(include_steps: bool = False) -> dict:

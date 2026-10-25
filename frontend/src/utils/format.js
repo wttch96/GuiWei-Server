@@ -49,18 +49,28 @@ export function statusInfo(status) {
   }
 }
 
+/** 带上 updated_at 作为版本号：SQLite 会复用被删除照片的 ID，避免浏览器缓存串图。 */
+function photoVersion(photoOrId) {
+  if (typeof photoOrId !== 'object' || !photoOrId) return ''
+  return photoOrId.updated_at || photoOrId.created_at || photoOrId.size || ''
+}
+
 export function photoUrl(photoOrId) {
   const id = typeof photoOrId === 'object' ? photoOrId?.id : photoOrId
   if (!id) return ''
   const token = localStorage.getItem('guiwei_token') || ''
-  return `/api/photos/${id}/file?token=${encodeURIComponent(token)}`
+  const version = photoVersion(photoOrId)
+  const suffix = version ? `&v=${encodeURIComponent(version)}` : ''
+  return `/api/photos/${id}/file?token=${encodeURIComponent(token)}${suffix}`
 }
 
 export function photoDownloadUrl(photoOrId) {
   const id = typeof photoOrId === 'object' ? photoOrId?.id : photoOrId
   if (!id) return ''
   const token = localStorage.getItem('guiwei_token') || ''
-  return `/api/photos/${id}/file?download=1&token=${encodeURIComponent(token)}`
+  const version = photoVersion(photoOrId)
+  const suffix = version ? `&v=${encodeURIComponent(version)}` : ''
+  return `/api/photos/${id}/file?download=1&token=${encodeURIComponent(token)}${suffix}`
 }
 
 export function formatBytes(value) {

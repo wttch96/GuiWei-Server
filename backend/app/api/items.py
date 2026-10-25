@@ -1,8 +1,9 @@
 """物品 API。"""
 from flask import Blueprint, request
+from pydantic import ValidationError
 
 from app.schemas.common import bool_arg, int_arg, parse_body
-from app.schemas.storage import ItemIn, ItemMove, ItemUpdate
+from app.schemas.storage import ItemBatchIn, ItemIn, ItemMove, ItemUpdate
 from app.services import item_service
 from app.utils.responses import ok, paged
 
@@ -37,6 +38,31 @@ def list_items():
 def create_item():
     body = parse_body(ItemIn)
     return ok(item_service.create_item(body.model_dump()), status=201)
+
+
+@bp.post("/items/batch")
+def create_items():
+    """批量创建物品（多物品检测后一次入库），逐条校验、逐条入库。"""
+    body = parse_body(ItemBatchIn)
+    entries: list[tuple[int, dict]] = []
+    failed: list[dict] = []
+    for index, raw in enumerate(body.items):
+        try:
+            entries.append((index, ItemIn.model_validate(raw).model_dump()))
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else {}
+            failed.append(
+                {
+                    "index": index,
+                    "name": str(raw.get("name") or ""),
+                    "message": str(first.get("msg") or "参数校验失败"),
+                }
+            )
+
+    result = item_service.create_items(entries)
+    result["failed"] = sorted(failed + result["failed"], key=lambda row: row["index"])
+    result["total"] = len(body.items)
+    return ok(result, status=201)
 
 
 @bp.get("/items/<int:item_id>")

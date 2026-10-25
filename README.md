@@ -13,6 +13,7 @@
 - **会话管理**：会话列表可查看、切换、删除；「新建会话」立即开启独立上下文，历史会话仍保留在服务端。
 - **拍照识物**：上传照片，经 DeepSeek 视觉模型（`deepseek-flash`）识别名称、描述、分类、标签、数量、色系与建议位置，确认后一键入库。
 - **以图找相似**：识图结果会立即与已有物品做本地描述匹配，按相似度展示「名称 / 分类 / 标签 / 描述」相近的物品，并在卡片上给出匹配原因，避免重复入库。
+- **多物品识别（可选）**：接入 YOLOE 开放词汇 + 实例分割模型，自动检测并精确抠出照片中的多件物品，逐件识别后一次性批量入库。
 - **图片管理**：独立的文件管理页，可按文件名、关联状态筛选，查看占用空间、预览大图、下载、单张或批量删除已上传的图片。
 - **管理后台**：概览统计、房间与容器树、物品筛选、分类/标签维护、AI 对话（Markdown 渲染、物品卡片、工具调用轨迹）、拍照识物、操作日志；支持手机浏览器访问与调用手机摄像头。
 - **单管理员 + JWT**：管理员密码使用 werkzeug 加盐哈希存入数据库；登录后签发 Token，支持 `Authorization: Bearer`、`X-Auth-Token` 以及图片 URL 的 `?token=`。
@@ -151,6 +152,12 @@ curl http://127.0.0.1:5555/api/health
 | `DEEPSEEK_API_BASE` / `DEEPSEEK_MODEL` | 默认 `https://api.deepseek.com` / `deepseek-flash` |
 | `AI_MAX_ITERATIONS` | 单轮对话最多工具调用轮数，默认 8 |
 | `VISION_API_BASE` / `VISION_API_KEY` / `VISION_MODEL` | 视觉识图覆盖项；默认复用 DeepSeek 的 Base/Key，模型为 `deepseek-flash` |
+| `YOLO_MODEL` / `YOLO_CLASSES` / `YOLO_CONFIDENCE` | 多物品检测模型（默认 `yoloe-11l-seg.pt`）、开放词汇类别与置信度（需安装 `requirements-yolo.txt`） |
+| `YOLO_IMAGE_SIZE` / `YOLO_IOU` / `YOLO_CROP_PADDING` | 推理分辨率（默认 1280）、NMS IoU、裁切外扩比例 |
+| `YOLO_MAX_OBJECTS` / `YOLO_MIN_CROP_SIDE` | 单张照片最多入库数量、切割后最小短边像素（低于该值忽略） |
+| `YOLO_USE_MASK` / `YOLO_MASK_CUTOUT` / `YOLO_DEVICE` | mask 识别图开关、白底抠图开关、推理设备（留空自动选 mps/cpu） |
+| `YOLO_TEMP_TTL_MINUTES` | 未入库裁切图的保留时间，过期自动删除 |
+| `YOLO_WEIGHTS_DIR` / `YOLO_DEVICE` | 模型与 CLIP 权重缓存目录（默认 `backend/weights`）、推理设备（如 `mps`） |
 | `AUTO_CREATE_DB` / `AUTO_BOOTSTRAP_ADMIN` | 启动时自动建表 / 建管理员 |
 | `FLASK_DEBUG` / `HOST` / `PORT` | 开发调试开关、监听地址与端口（`.env.example` 默认 `0.0.0.0:5555`，手机可经局域网访问；只想本机访问时改为 `127.0.0.1`） |
 | `SERVE_FRONTEND` | 由 Flask 托管 `frontend/dist`（单机部署用） |
@@ -188,6 +195,43 @@ VISION_MODEL=模型名称
 `VISION_API_BASE` 会自动补 `/chat/completions`。未配置任何视觉密钥时，识图接口返回 503，但上传、关联、手动入库仍可正常使用。
 
 识图结果包含 `color_family` 字段。模型返回「深蓝色」「银灰」「米白」等描述时，后端会收敛到固定色系（蓝色 / 灰色 / 白色）；多色或花纹识别为「彩色」，无法判断时为「其他」。前端识图页会自动填充色系，保存物品时一并入库。
+
+### 多物品识别（可选）
+
+拍照识物页的「多物品识别」会把一张照片里的多件物品分别检测、裁切，再逐件交给视觉模型识别，勾选后可以一次批量入库。拍照入口分为「拍单件」和「拍多件」：单件自动压缩到 480p 以节省流量；多件保留原图，保证切出来的小图足够清晰。
+
+安装可选依赖（会一并安装 `ultralytics` 与 CPU 版 `torch`）：
+
+```bash
+cd backend
+pip install -r requirements-yolo.txt
+```
+
+首次识别会自动下载 `yoloe-11l-seg.pt`（约 68MB）与 CLIP 文本编码器（约 340MB）到 `backend/weights/`，之后无需重复下载。Apple Silicon 会自动使用 MPS 推理（M4 上 1280 分辨率约 0.2 秒/张）。模型越大越准：`yoloe-11m-seg.pt` 更快，`yoloe-11x-seg.pt` 最准。**mask 只用于生成一张白底「识别图」交给视觉模型；保存和展示的缩略图始终是原图直接裁切。** 可用 `YOLO_CLASSES` 按自己的收纳场景调整开放词汇类别（英文，逗号分隔）：
+
+```dotenv
+# 常见家居/收纳/洗漱物品，含罐子、药瓶、药盒、药板、剃须刀、洗漱瓶等
+YOLO_CLASSES=bottle, jar, can, box, container, basket, bag, cup, bowl, plate, book, notebook, pen, scissors, tape, stapler, ruler, glue, calculator, remote, cell phone, tablet, laptop, keyboard, computer mouse, computer monitor, television, speaker, printer, router, game controller, camera, microphone, tripod, usb drive, external hard drive, power strip, charger, cable, power bank, headphones, key, wallet, umbrella, glasses, watch, towel, clothes, shoe, hat, toy, medicine bottle, medicine box, pill, blister pack, band-aid, ointment tube, cotton swab, thermometer, face mask, first aid kit, cosmetic bottle, perfume, toothbrush, toothpaste, soap, shampoo, tissue, snack, chopsticks, spoon, fork, knife, desk lamp, electric fan, clock, picture frame, vase, candle, lighter, battery, flashlight, hairdryer, clothes iron, razor, shaving cream, comb, hairbrush, body wash, face wash, hand sanitizer, mouthwash, dental floss, water flosser, deodorant, cotton pad, nail clippers, tweezers, makeup brush, lipstick, sunscreen, mirror, bathroom scale, loofah, soap dish, shower cap, toilet paper, washcloth, toothbrush holder, cosmetic bag
+YOLO_CONFIDENCE=0.35
+# 多物品照片物品小且密集，1280 比 640 明显更准；CPU 慢时可降到 960/640
+YOLO_IMAGE_SIZE=1280
+YOLO_MAX_OBJECTS=12
+# 切割后短边小于该像素的物品会被忽略
+YOLO_MIN_CROP_SIDE=64
+# 裁切向外扩展 6%，避免切掉物体边缘
+YOLO_CROP_PADDING=0.06
+# 未入库的裁切图保留时间（分钟），过期自动删除
+YOLO_TEMP_TTL_MINUTES=60
+# mask 只用于识别图；保存的缩略图始终是原图直接裁切
+YOLO_USE_MASK=true
+YOLO_MASK_CUTOUT=true
+# 留空自动使用 mps（Apple Silicon）；也可显式写 cpu / mps
+YOLO_DEVICE=
+```
+
+检测结果中的类别会映射为中文展示（如 `jar` → 罐子、`medicine bottle` → 药瓶），未收录的类别保留英文。每件物品入库时使用**裁切后的图片**作为主图缩略图。未入库的裁切图不会出现在图片库：离开页面、重新检测或取消勾选时会立即删除，异常退出时由 `YOLO_TEMP_TTL_MINUTES` 兜底清理。
+
+相关接口：`POST /api/photos/<id>/detect` 返回裁切后的照片记录与类别/置信度；`POST /api/items/batch` 一次创建多件物品，逐条校验、单条失败不影响其它条目。未安装依赖时检测接口返回 503，拍照识物的其它功能不受影响。
 
 ### 以图找相似
 

@@ -145,6 +145,7 @@ function triggerCamera() {
   cameraInput.value?.click()
 }
 
+/** 拍照可选多张：逐张压缩到 480p 后上传，单张失败不影响其余照片。 */
 async function onCameraPick(event) {
   const files = Array.from(event.target.files || [])
   event.target.value = ''

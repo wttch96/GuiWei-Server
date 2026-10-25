@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowDown, Expand, Fold, MagicStick } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { changePassword } from '../api/auth'
+import { getAiBalance } from '../api/ai'
 import SideNav from '../components/SideNav.vue'
 
 const route = useRoute()
@@ -22,6 +23,45 @@ const pwdForm = reactive({ old_password: '', new_password: '', confirm: '' })
 
 const pageTitle = computed(() => route.meta.title || '管理后台')
 const initial = computed(() => (store.adminName || '管').slice(0, 1))
+
+// ===== 顶栏 DeepSeek 余额 =====
+// 后端缓存 60 秒；页面每 5 分钟刷新一次，点击胶囊可强制刷新。
+const balance = ref(null)
+const balanceLoading = ref(false)
+let balanceTimer = null
+
+const balanceSymbol = computed(() => (balance.value?.currency === 'USD' ? '$' : '¥'))
+const balanceValue = computed(() => {
+  const total = balance.value?.total
+  if (total === null || total === undefined || total === '') return '—'
+  return `${balanceSymbol.value}${total}`
+})
+// 余额低于 5 元时用橙色提醒
+const balanceLow = computed(() => {
+  const total = Number(balance.value?.total)
+  return Number.isFinite(total) && total < 5
+})
+const balanceTip = computed(() => {
+  const info = balance.value
+  if (!info) return 'DeepSeek 余额'
+  if (info.error) return `${info.error}（点击重试）`
+  const parts = [`可用余额 ${balanceValue.value}`]
+  if (info.granted) parts.push(`赠送 ${balanceSymbol.value}${info.granted}`)
+  if (info.topped_up) parts.push(`充值 ${balanceSymbol.value}${info.topped_up}`)
+  return `${parts.join(' · ')}（点击刷新）`
+})
+
+/** 拉取余额；refresh=true 时跳过后端缓存。 */
+async function loadBalance(refresh = false) {
+  balanceLoading.value = true
+  try {
+    balance.value = await getAiBalance(refresh)
+  } catch {
+    // 请求层已提示错误，头部保持原样
+  } finally {
+    balanceLoading.value = false
+  }
+}
 
 const validateConfirm = (_rule, value, callback) => {
   if (!value) return callback(new Error('请再次输入新密码'))
@@ -89,9 +129,14 @@ function toggleNav() {
 onMounted(() => {
   window.addEventListener('resize', onResize)
   if (!store.admin) store.fetchMe().catch(() => {})
+  loadBalance()
+  balanceTimer = window.setInterval(() => loadBalance(), 5 * 60 * 1000)
 })
 
-onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+  if (balanceTimer) window.clearInterval(balanceTimer)
+})
 
 watch(
   () => route.path,
@@ -133,6 +178,24 @@ watch(
           </div>
         </div>
         <div class="topbar-right">
+          <el-tooltip
+            v-if="balance?.configured"
+            :content="balanceTip"
+            placement="bottom"
+            :show-after="300"
+          >
+            <button
+              type="button"
+              class="balance-chip"
+              :class="{ low: balanceLow, error: !!balance?.error }"
+              :disabled="balanceLoading"
+              @click="loadBalance(true)"
+            >
+              <span class="balance-dot" />
+              <span class="balance-brand">DeepSeek</span>
+              <span class="balance-amount">{{ balanceLoading ? '…' : balanceValue }}</span>
+            </button>
+          </el-tooltip>
           <el-button circle class="ai-btn" @click="router.push('/ai')">
             <el-icon><MagicStick /></el-icon>
           </el-button>
@@ -237,6 +300,66 @@ watch(
   background: var(--brand-soft);
 }
 
+.balance-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.balance-chip:hover {
+  border-color: var(--brand-line);
+  background: #f7fbf9;
+}
+
+.balance-chip:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.balance-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3fae87;
+  flex: none;
+}
+
+.balance-brand {
+  color: var(--muted);
+}
+
+.balance-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-deep);
+}
+
+.balance-chip.low .balance-dot {
+  background: #e6a23c;
+}
+
+.balance-chip.low .balance-amount {
+  color: #d48806;
+}
+
+.balance-chip.error .balance-dot {
+  background: #c0c4cc;
+}
+
+.balance-chip.error .balance-amount {
+  color: var(--muted);
+}
+
 .user-chip {
   display: flex;
   align-items: center;
@@ -275,6 +398,9 @@ watch(
     padding: 14px 12px;
   }
   .user-name {
+    display: none;
+  }
+  .balance-brand {
     display: none;
   }
   .page-crumb-sub {

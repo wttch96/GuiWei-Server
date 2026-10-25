@@ -60,6 +60,14 @@ class ItemIn(APIModel):
     photo_ids: list[int] = Field(default_factory=list)
 
 
+class ItemBatchIn(APIModel):
+    """批量入库：多物品检测后一次创建多件物品。
+
+    每件物品单独校验，单条格式错误只影响该条，不阻断整批。
+    """
+    items: list[dict] = Field(min_length=1, max_length=50)
+
+
 class ItemUpdate(APIModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None

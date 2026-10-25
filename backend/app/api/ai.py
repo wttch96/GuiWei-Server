@@ -1,5 +1,5 @@
-"""AI 对话 / 状态 / 工具清单 / 会话历史。"""
-from flask import Blueprint, g
+"""AI 对话 / 状态 / 余额 / 工具清单 / 会话历史。"""
+from flask import Blueprint, g, request
 
 from app.schemas.common import parse_body
 from app.schemas.storage import ChatIn, PromptUpdateIn
@@ -20,6 +20,13 @@ def chat():
 @bp.get("/status")
 def status():
     return ok(ai_service.status())
+
+
+@bp.get("/balance")
+def balance():
+    """DeepSeek 账户剩余余额，?refresh=1 可跳过 60 秒缓存。"""
+    force = request.args.get("refresh") in {"1", "true", "yes"}
+    return ok(ai_service.balance(force=force))
 
 
 @bp.get("/sessions")

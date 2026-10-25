@@ -14,6 +14,7 @@ def search(q: str, limit: int = 8) -> dict:
 
     rooms = Room.query.filter(Room.name.ilike(like)).limit(limit).all()
     containers = (
+        # 名称和昵称都参与搜索，例如搜「药柜」能命中名称「柜子A」
         Container.query.filter(
             or_(Container.name.ilike(like), Container.nickname.ilike(like))
         )

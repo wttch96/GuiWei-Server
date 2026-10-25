@@ -21,6 +21,8 @@ class Photo(db.Model, TimestampMixin):
     width = db.Column(db.Integer, default=0, nullable=False)
     height = db.Column(db.Integer, default=0, nullable=False)
     is_primary = db.Column(db.Boolean, default=False, nullable=False)
+    # 多物品检测产生的裁切图：未入库前不在图片库展示，并会被自动清理
+    is_temp = db.Column(db.Boolean, default=False, nullable=False, index=True)
 
     ai_text = db.Column(db.Text, default="", nullable=False)   # 模型原始输出
     ai_result = db.Column(db.Text, default="", nullable=False)  # 规范化后的 JSON
@@ -38,6 +40,7 @@ class Photo(db.Model, TimestampMixin):
             "width": self.width,
             "height": self.height,
             "is_primary": self.is_primary,
+            "is_temp": bool(self.is_temp),
             "ai_result": loads(self.ai_result, None),
             "has_ai_result": bool(self.ai_result),
             "created_at": iso(self.created_at),

@@ -110,17 +110,22 @@ def _resolve_category(data: dict) -> Category | None:
 def _attach_photos(item: Item, photo_ids: list[int] | None) -> None:
     if not photo_ids:
         return
-    photos = Photo.query.filter(Photo.id.in_([int(pid) for pid in photo_ids])).all()
-    found = {photo.id for photo in photos}
-    missing = [pid for pid in photo_ids if int(pid) not in found]
+    ids = [int(pid) for pid in photo_ids]
+    photos = Photo.query.filter(Photo.id.in_(ids)).all()
+    by_id = {photo.id: photo for photo in photos}
+    missing = [pid for pid in ids if pid not in by_id]
     if missing:
         raise ApiError(f"照片不存在: {missing}", 404)
-    for photo in photos:
+    # 按传入顺序处理：第一张作为主图，便于前端把「当前查看的照片」排在最前
+    ordered = [by_id[pid] for pid in ids]
+    for photo in ordered:
         if photo.item_id and photo.item_id != item.id:
             raise ApiError(f"照片 {photo.id} 已属于其它物品", 409)
         photo.item_id = item.id
+        # 检测裁切图一旦入库就转为正式照片，不再参与临时清理
+        photo.is_temp = False
     if not any(photo.is_primary for photo in item.photos):
-        photos[0].is_primary = True
+        ordered[0].is_primary = True
 
 
 def create_item(data: dict) -> dict:
@@ -165,6 +170,26 @@ def create_item(data: dict) -> dict:
     db.session.commit()
     db.session.refresh(item)
     return item.to_dict(detail=True)
+
+
+def create_items(entries: list[tuple[int, dict]]) -> dict:
+    """批量创建物品：入参为 (原始下标, 物品数据)，逐件提交，单件失败不影响其它物品。"""
+    created: list[dict] = []
+    failed: list[dict] = []
+    for index, data in entries:
+        try:
+            created.append({"index": index, "item": create_item(data)})
+        except ApiError as exc:
+            db.session.rollback()
+            failed.append(
+                {"index": index, "name": (data.get("name") or ""), "message": exc.message}
+            )
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            failed.append(
+                {"index": index, "name": (data.get("name") or ""), "message": str(exc)[:200]}
+            )
+    return {"created": created, "failed": failed, "total": len(entries)}
 
 
 def update_item(item_id: int, data: dict) -> dict:
