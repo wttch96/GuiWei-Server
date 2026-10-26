@@ -12,6 +12,7 @@ import {
   COLOR_FAMILIES,
   STATUS_OPTIONS,
   formatDate,
+  isExpired,
   photoUrl,
   statusInfo,
 } from '../utils/format'
@@ -262,6 +263,25 @@ watch(
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
+        <el-table-column label="过期时间" width="140">
+          <template #default="{ row }">
+            <template v-if="row.expiry_date">
+              <span :class="{ expired: isExpired(row.expiry_date) }">
+                {{ row.expiry_date }}
+              </span>
+              <el-tag
+                v-if="isExpired(row.expiry_date)"
+                size="small"
+                type="danger"
+                effect="plain"
+                style="margin-left: 4px"
+              >
+                已过期
+              </el-tag>
+            </template>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="标签" min-width="160">
           <template #default="{ row }">
             <el-tag
@@ -331,5 +351,10 @@ watch(
   display: flex;
   justify-content: flex-end;
   padding: 16px 20px;
+}
+
+.expired {
+  color: #d9534f;
+  font-weight: 600;
 }
 </style>

@@ -1,7 +1,28 @@
 """房间 / 容器 / 物品 / 分类 / 标签的请求模型。"""
-from pydantic import Field
+from datetime import date, datetime
+from typing import Annotated
+
+from pydantic import AfterValidator, Field
 
 from app.schemas.common import APIModel
+
+
+def _normalize_date(value: str) -> str:
+    """日期统一为 YYYY-MM-DD；空字符串表示未填写。"""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(text).date().isoformat()
+    except ValueError as exc:
+        raise ValueError("日期格式应为 YYYY-MM-DD") from exc
+
+
+DateStr = Annotated[str, AfterValidator(_normalize_date)]
 
 
 class RoomIn(APIModel):
@@ -57,6 +78,10 @@ class ItemIn(APIModel):
     unit: str = "件"
     status: str = "in_stock"
     color_family: str = Field(default="", max_length=20)
+    purchase_date: DateStr | None = None
+    production_date: DateStr | None = None
+    valid_period: str | None = Field(default=None, max_length=40)
+    expiry_date: DateStr | None = None
     photo_ids: list[int] = Field(default_factory=list)
 
 
@@ -76,6 +101,10 @@ class ItemUpdate(APIModel):
     unit: str | None = None
     status: str | None = None
     color_family: str | None = Field(default=None, max_length=20)
+    purchase_date: DateStr | None = None
+    production_date: DateStr | None = None
+    valid_period: str | None = Field(default=None, max_length=40)
+    expiry_date: DateStr | None = None
     category_id: int | None = None
     category_name: str | None = None
     tag_ids: list[int] | None = None

@@ -68,6 +68,11 @@ class Item(db.Model, TimestampMixin):
     unit = db.Column(db.String(20), default="件", nullable=False)
     status = db.Column(db.String(20), default="in_stock", nullable=False, index=True)
     color_family = db.Column(db.String(20), default="", nullable=False, index=True)
+    # 日期均为可选项，空字符串表示未填写；日期格式统一为 YYYY-MM-DD
+    purchase_date = db.Column(db.String(20), default="", nullable=False)
+    production_date = db.Column(db.String(20), default="", nullable=False)
+    valid_period = db.Column(db.String(40), default="", nullable=False)
+    expiry_date = db.Column(db.String(20), default="", nullable=False, index=True)
 
     category = db.relationship("Category", back_populates="items")
     room = db.relationship("Room", back_populates="items")
@@ -125,6 +130,10 @@ class Item(db.Model, TimestampMixin):
             "status": self.status,
             "status_label": ITEM_STATUSES.get(self.status, self.status),
             "color_family": self.color_family or "",
+            "purchase_date": self.purchase_date or "",
+            "production_date": self.production_date or "",
+            "valid_period": self.valid_period or "",
+            "expiry_date": self.expiry_date or "",
             "tags": [tag.to_dict() for tag in self.tags],
             "photo_count": len(self.photos),
             "primary_photo": primary.to_dict() if primary else None,

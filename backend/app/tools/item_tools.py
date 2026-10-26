@@ -91,6 +91,10 @@ def create_item(
     unit: str = "件",
     status: str = "in_stock",
     color_family: str = "",
+    purchase_date: str = "",
+    production_date: str = "",
+    valid_period: str = "",
+    expiry_date: str = "",
 ) -> str:
     """创建物品并放到指定房间/容器。房间必须存在；容器不存在时会报错。
 
@@ -105,6 +109,10 @@ def create_item(
         unit: 单位，默认「件」。
         status: 状态，默认 in_stock。
         color_family: 色系（可选），例如 黑色 / 白色 / 蓝色；不确定就留空。
+        purchase_date: 购买日期（可选），格式 YYYY-MM-DD。
+        production_date: 生产日期（可选），格式 YYYY-MM-DD。
+        valid_period: 有效期（可选），例如 "24个月"。
+        expiry_date: 过期时间（可选），格式 YYYY-MM-DD。
     """
     try:
         target_room = room_ref(room)
@@ -122,6 +130,10 @@ def create_item(
                 "unit": unit,
                 "status": status,
                 "color_family": color_family,
+                "purchase_date": purchase_date,
+                "production_date": production_date,
+                "valid_period": valid_period,
+                "expiry_date": expiry_date,
             },
         )
     except ApiError as exc:
@@ -143,6 +155,10 @@ def update_item(
     room: str | None = None,
     container_path: str | None = None,
     color_family: str | None = None,
+    purchase_date: str | None = None,
+    production_date: str | None = None,
+    valid_period: str | None = None,
+    expiry_date: str | None = None,
 ) -> str:
     """更新物品字段。只传需要修改的字段。
 
@@ -158,6 +174,10 @@ def update_item(
         room: 新房间名称或 ID（移动位置时使用）。
         container_path: 新容器路径；传空字符串表示放到房间顶层。需要移动时优先用 move_item。
         color_family: 新色系（可选）；传空字符串表示清除。
+        purchase_date: 新购买日期（可选，YYYY-MM-DD）；传空字符串表示清除。
+        production_date: 新生产日期（可选，YYYY-MM-DD）；传空字符串表示清除。
+        valid_period: 新有效期（可选），例如 "24个月"；传空字符串表示清除。
+        expiry_date: 新过期时间（可选，YYYY-MM-DD）；传空字符串表示清除。
     """
     data: dict = {}
     for key, value in {
@@ -167,6 +187,10 @@ def update_item(
         "unit": unit,
         "status": status,
         "color_family": color_family,
+        "purchase_date": purchase_date,
+        "production_date": production_date,
+        "valid_period": valid_period,
+        "expiry_date": expiry_date,
     }.items():
         if value is not None:
             data[key] = value

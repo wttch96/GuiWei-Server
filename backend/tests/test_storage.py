@@ -71,6 +71,45 @@ def test_item_color_family_is_optional(client, auth):
     assert by_keyword["total"] == 0
 
 
+def test_item_dates_are_optional(client, auth):
+    room = create_room(client, auth)
+    item = _create_item(
+        client,
+        auth,
+        room["id"],
+        purchase_date="2025-01-02",
+        production_date="2024-12-01",
+        valid_period="24个月",
+        expiry_date="2026-12-01",
+    )
+    assert item["purchase_date"] == "2025-01-02"
+    assert item["production_date"] == "2024-12-01"
+    assert item["valid_period"] == "24个月"
+    assert item["expiry_date"] == "2026-12-01"
+
+    plain = _create_item(client, auth, room["id"], name="雨伞")
+    assert plain["purchase_date"] == ""
+    assert plain["production_date"] == ""
+    assert plain["valid_period"] == ""
+    assert plain["expiry_date"] == ""
+
+    updated = client.put(
+        f"/api/items/{item['id']}",
+        json={"expiry_date": "", "valid_period": "36个月"},
+        headers=auth,
+    ).get_json()["data"]
+    assert updated["expiry_date"] == ""
+    assert updated["valid_period"] == "36个月"
+    assert updated["purchase_date"] == "2025-01-02"
+
+    invalid = client.post(
+        "/api/items",
+        json={"name": "牛奶", "room_id": room["id"], "expiry_date": "2025/01/01"},
+        headers=auth,
+    )
+    assert invalid.status_code == 422
+
+
 def test_item_crud_tags_and_search(client, auth):
     room = create_room(client, auth)
     item = _create_item(

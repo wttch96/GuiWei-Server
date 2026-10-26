@@ -128,6 +128,17 @@ class Config:
     # 留空时自动使用 mps（Apple Silicon）或 cpu
     YOLO_DEVICE = os.getenv("YOLO_DEVICE", "")
 
+    # 天气（Open-Meteo 免费接口，无需 API Key）
+    WEATHER_ENABLED = _bool("WEATHER_ENABLED", True)
+    WEATHER_CITY = os.getenv("WEATHER_CITY", "天津")
+    WEATHER_LATITUDE = _float("WEATHER_LATITUDE", 39.0842)
+    WEATHER_LONGITUDE = _float("WEATHER_LONGITUDE", 117.2009)
+    WEATHER_REFRESH_MINUTES = _int("WEATHER_REFRESH_MINUTES", 60)
+    WEATHER_TIMEOUT = _int("WEATHER_TIMEOUT", 10)
+    WEATHER_API_BASE = os.getenv(
+        "WEATHER_API_BASE", "https://api.open-meteo.com/v1/forecast"
+    )
+
     # 其它
     AUTO_CREATE_DB = _bool("AUTO_CREATE_DB", True)
     SERVE_FRONTEND = _bool("SERVE_FRONTEND", False)

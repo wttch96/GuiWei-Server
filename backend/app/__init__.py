@@ -65,6 +65,10 @@ def create_app(config=None) -> Flask:
                         "或执行 flask --app run.py create-admin --username ... --password ..."
                     )
 
+    from app.services import weather_service
+
+    weather_service.start_scheduler(app)
+
     return app
 
 
@@ -93,6 +97,25 @@ def _ensure_schema() -> None:
             )
         )
         db.session.commit()
+
+    for column, length in (
+        ("purchase_date", 20),
+        ("production_date", 20),
+        ("valid_period", 40),
+        ("expiry_date", 20),
+    ):
+        if column not in columns:
+            db.session.execute(
+                text(
+                    f"ALTER TABLE items ADD COLUMN {column} VARCHAR({length}) "
+                    "NOT NULL DEFAULT ''"
+                )
+            )
+    if "expiry_date" not in columns:
+        db.session.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_items_expiry_date ON items (expiry_date)")
+        )
+    db.session.commit()
 
     if "containers" in inspector.get_table_names():
         container_columns = {

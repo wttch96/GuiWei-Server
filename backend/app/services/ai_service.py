@@ -13,7 +13,7 @@ from flask import current_app
 
 from app.extensions import db
 from app.models import AiMessage
-from app.services import prompt_service, vision_service
+from app.services import prompt_service, vision_service, weather_service
 from app.utils.errors import ApiError
 from app.utils.serialize import dumps, iso, loads
 
@@ -367,10 +367,13 @@ def chat(message: str, session_id: str | None = None) -> dict:
     tools = get_tools()
     tool_map = {tool.name: tool for tool in tools}
 
+    system_prompt = (
+        prompt_service.get_chat_prompt()
+        .replace("{today}", _today())
+        .replace("{weather}", weather_service.prompt_context())
+    )
     messages = [
-        SystemMessage(
-            content=prompt_service.get_chat_prompt().replace("{today}", _today())
-        ),
+        SystemMessage(content=system_prompt),
         *_load_history(session_id),
         HumanMessage(content=message),
     ]

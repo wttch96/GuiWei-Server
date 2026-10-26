@@ -30,6 +30,7 @@ from app.tools.photo_tools import recognize_photo
 from app.tools.room_tools import create_room, delete_room, list_rooms, update_room
 from app.tools.stats_tools import global_search, inventory_overview
 from app.tools.tag_tools import create_tag, delete_tag, list_tags, update_tag
+from app.tools.weather_tools import get_weather
 
 ALL_TOOLS = [
     # 房间
@@ -65,6 +66,7 @@ ALL_TOOLS = [
     recognize_photo,
     inventory_overview,
     global_search,
+    get_weather,
 ]
 
 

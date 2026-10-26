@@ -13,7 +13,7 @@ PROMPT_DEFINITIONS = {
         "title": "AI 对话系统提示词",
         "description": "控制收纳助手如何理解需求、调用工具和回复。",
         "default": CHAT_SYSTEM_PROMPT,
-        "hint": "支持占位符 {today}，会被替换为今天的日期。保存后对新的对话立即生效。",
+        "hint": "支持占位符 {today}（今天日期）与 {weather}（系统每小时更新的天津天气）。保存后对新的对话立即生效。",
         "max_length": 20000,
     },
     "vision": {

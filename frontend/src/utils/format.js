@@ -16,6 +16,14 @@ export function fromNow(value) {
   return target.format('YYYY-MM-DD')
 }
 
+/** 是否已过期（按自然日比较；未填写或格式错误时视为未设置）。 */
+export function isExpired(value) {
+  if (!value) return false
+  const target = dayjs(value)
+  if (!target.isValid()) return false
+  return target.endOf('day').isBefore(dayjs())
+}
+
 export const COLOR_FAMILIES = [
   '黑色',
   '白色',

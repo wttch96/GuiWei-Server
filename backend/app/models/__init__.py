@@ -9,6 +9,7 @@ from app.models.log import OperationLog
 from app.models.photo import Photo
 from app.models.room import Room
 from app.models.tag import Tag
+from app.models.weather import WeatherSnapshot
 
 __all__ = [
     "Admin",
@@ -24,4 +25,5 @@ __all__ = [
     "Photo",
     "Room",
     "Tag",
+    "WeatherSnapshot",
 ]

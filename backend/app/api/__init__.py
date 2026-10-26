@@ -12,6 +12,7 @@ from app.api import (
     search,
     stats,
     tags,
+    weather,
 )
 
 
@@ -29,5 +30,6 @@ def register_blueprints(app) -> None:
         stats,
         logs,
         search,
+        weather,
     ):
         app.register_blueprint(module.bp)

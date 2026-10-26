@@ -7,7 +7,9 @@
 - **房间 / 容器 / 物品三级收纳**：容器支持无限层级嵌套，物品可移动、搜索、借出/用完/丢弃等状态管理。
 - **分类与标签**：每件物品有且只有一个大类，可拥有多个标签。
 - **色系（可选）**：物品可标记黑色、白色、蓝色等色系，支持按色系筛选，也可在后台或 AI 对话中自定义取值；拍照识图会识别主体颜色并自动填入色系。
-- **AI 收纳助手**：自然语言查询与操作，例如「把电视遥控器放到客厅/电视柜/上层抽屉」「盘点一下书房」。AI 只能通过 28 个工具读写数据，所有改动真实落库并记录操作日志。回复支持 Markdown；涉及具体物品时以卡片展示图片、位置、分类、标签、数量与状态。
+- **日期与保质期（可选）**：物品可记录购买日期、生产日期、有效期与过期时间；日期统一为 `YYYY-MM-DD`，物品列表会对已过期物品做醒目标记。
+- **AI 收纳助手**：自然语言查询与操作，例如「把电视遥控器放到客厅/电视柜/上层抽屉」「盘点一下书房」。AI 只能通过 29 个工具读写数据，所有改动真实落库并记录操作日志。回复支持 Markdown；涉及具体物品时以卡片展示图片、位置、分类、标签、数量与状态。
+- **天气感知**：系统每小时通过 Open-Meteo 免费接口刷新天津天气并缓存到数据库，AI 对话会注入 `{weather}` 占位符，也可通过 `get_weather` 工具查询温度、体感、湿度与降水概率。
 - **可编辑提示词**：对话系统提示词与拍照识图提示词都可以在后台「AI 提示词」页编辑、保存、恢复默认，保存后立即生效，无需重启或改 `.env`。
 - **Token 统计**：每次模型调用都会记录输入/输出 token；工具调用展示所属轮次的 token 消耗，每条回复显示本轮合计，页面顶部显示当前会话累计，会话列表显示每个会话的总量。
 - **会话管理**：会话列表可查看、切换、删除；「新建会话」立即开启独立上下文，历史会话仍保留在服务端。
@@ -158,6 +160,10 @@ curl http://127.0.0.1:5555/api/health
 | `YOLO_USE_MASK` / `YOLO_MASK_CUTOUT` / `YOLO_DEVICE` | mask 识别图开关、白底抠图开关、推理设备（留空自动选 mps/cpu） |
 | `YOLO_TEMP_TTL_MINUTES` | 未入库裁切图的保留时间，过期自动删除 |
 | `YOLO_WEIGHTS_DIR` / `YOLO_DEVICE` | 模型与 CLIP 权重缓存目录（默认 `backend/weights`）、推理设备（如 `mps`） |
+| `WEATHER_ENABLED` / `WEATHER_CITY` | 天气缓存开关与城市，默认开启、天津 |
+| `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | 城市坐标，默认天津（39.0842, 117.2009） |
+| `WEATHER_REFRESH_MINUTES` | 自动刷新间隔（分钟），默认 60，最小 5 |
+| `WEATHER_TIMEOUT` / `WEATHER_API_BASE` | 请求超时（秒）与 Open-Meteo 接口地址 |
 | `AUTO_CREATE_DB` / `AUTO_BOOTSTRAP_ADMIN` | 启动时自动建表 / 建管理员 |
 | `FLASK_DEBUG` / `HOST` / `PORT` | 开发调试开关、监听地址与端口（`.env.example` 默认 `0.0.0.0:5555`，手机可经局域网访问；只想本机访问时改为 `127.0.0.1`） |
 | `SERVE_FRONTEND` | 由 Flask 托管 `frontend/dist`（单机部署用） |
@@ -271,11 +277,21 @@ GET /api/photos?page=1&page_size=24&q=遥控器&status=attached&sort=newest
 
 物品的 `color_family` 是可选字符串（最长 20 字），建议值包括黑、白、灰、米、棕、红、橙、黄、绿、青、蓝、紫、粉、彩色、其他。创建/更新物品时传 `color_family` 即可，列表接口支持 `?color_family=黑色` 筛选，搜索关键词也会匹配色系。旧数据库启动时会自动补列（`ALTER TABLE items ADD COLUMN color_family ...`），无需手动迁移。
 
+### 天气
+
+系统启动后会启动一个后台线程，默认每 60 分钟通过 [Open-Meteo](https://open-meteo.com)（免费、无需 API Key）抓取一次天津天气，并把最新结果写入 `weather_snapshots` 表（每个城市一条）。
+
+- AI 对话的系统提示词可用 `{weather}` 占位符，请求前会替换为类似「天津当前晴，气温 20°C，体感 19°C，今日 12~25°C，湿度 40%，降水概率 10%。」的文本。
+- AI 也可以直接调用 `get_weather` 工具；缓存缺失或过期时会现场刷新。
+- 前端或其他客户端可调用 `GET /api/weather` 读取缓存，`?refresh=1` 强制刷新。
+
+城市、坐标与刷新间隔可通过 `WEATHER_CITY`、`WEATHER_LATITUDE`、`WEATHER_LONGITUDE`、`WEATHER_REFRESH_MINUTES` 调整。
+
 ### AI 提示词
 
 后台「AI 提示词」页（`/ai/prompts`）可以编辑两套提示词：
 
-- **AI 对话系统提示词**：控制助手如何理解需求、调用工具、补全分类/标签/色系以及组织回复。支持 `{today}` 占位符，会在每次请求前替换为当天日期。
+- **AI 对话系统提示词**：控制助手如何理解需求、调用工具、补全分类/标签/色系以及组织回复。支持 `{today}`（当天日期）与 `{weather}`（系统缓存的天津天气）占位符，会在每次请求前自动替换。
 - **拍照识图提示词**：控制视觉模型输出的 JSON 字段与判断规则。默认要求输出 `name`、`description`、`category`、`tags`、`quantity`、`color_family`、`location_hint`、`confidence`、`raw_text`。
 
 保存的内容写入 `ai_prompts` 表（`key` 为 `chat` / `vision`），下次请求立即读取，无需重启服务；未保存时回退到代码内置默认值。恢复默认会删除对应覆盖记录。
@@ -315,7 +331,7 @@ POST /api/ai/prompts/vision/reset
 - `DELETE /api/ai/sessions/<id>` 删除该会话的全部消息；前端「新建会话」只是切换到新的 `session_id`，不会删除旧会话。
 - 旧数据库启动时会自动执行 `ALTER TABLE ai_messages ADD COLUMN usage ...`，历史消息的 token 记为 0，不影响继续使用。
 
-## AI 工具（28 个）
+## AI 工具（29 个）
 
 | 领域 | 工具 |
 | --- | --- |
@@ -326,6 +342,7 @@ POST /api/ai/prompts/vision/reset
 | 标签 | `list_tags`、`create_tag`、`update_tag`、`delete_tag` |
 | 照片 / AI | `recognize_photo` |
 | 查询 | `inventory_overview`、`global_search` |
+| 天气 | `get_weather` |
 
 工具统一返回 JSON：成功 `{"ok":true,"data":...}`，失败 `{"ok":false,"error":"...","status":409}`。删除类工具必须传 `confirm=true`。AI 产生的写操作日志 `source` 为 `ai`，后台操作则为 `api`。
 
@@ -351,6 +368,7 @@ Authorization: Bearer <token>
 | 标签 | `GET/POST /api/tags`、`PUT/DELETE /api/tags/<id>` |
 | 照片 | `POST /api/photos`（multipart）、`GET /api/photos`（分页；带 `item_id` 时返回数组）、`GET /api/photos/<id>/file`（`download=1` 强制下载）、`POST /api/photos/<id>/attach`、`POST /api/photos/<id>/primary`、`DELETE /api/photos/<id>`、`POST /api/photos/batch-delete`、`POST /api/photos/<id>/analyze`、`POST /api/photos/<id>/similar` |
 | AI | `POST /api/ai/chat`、`GET /api/ai/status`、`GET /api/ai/tools`、`GET /api/ai/sessions`、`GET /api/ai/sessions/<id>/messages`、`DELETE /api/ai/sessions/<id>`、`GET /api/ai/prompts`、`PUT /api/ai/prompts/<key>`、`POST /api/ai/prompts/<key>/reset` |
+| 天气 | `GET /api/weather`（`?refresh=1` 强制刷新） |
 | 其它 | `GET /api/stats/overview`、`GET /api/search?q=`、`GET /api/logs`、`GET /api/health` |
 
 ### 示例
@@ -394,6 +412,8 @@ curl -X POST http://127.0.0.1:5555/api/ai/chat \
 
 - `Room 1—N Container`，`Container.parent_id` 自关联实现多级嵌套。
 - `Item` 通过 `room_id`、`container_id` 定位，通过 `category_id` 关联唯一分类，通过 `item_tags` 关联多个标签。
+- `Item.purchase_date`、`production_date`、`valid_period`、`expiry_date` 均为可选文本字段：日期统一 `YYYY-MM-DD`，空字符串表示未填写。
+- `WeatherSnapshot` 按城市保存最近一次天气抓取结果，供 AI 提示词注入与 `GET /api/weather` 使用。
 - `Photo.item_id` 可空：照片可以先上传、后关联；删除物品时级联删除照片记录并清理磁盘文件。
 - 删除房间：房间内必须没有容器和物品，否则返回 409。
 - 删除容器：必须没有子容器和物品，否则返回 409。

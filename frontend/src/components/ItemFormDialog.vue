@@ -48,6 +48,10 @@ const form = reactive({
   unit: '件',
   status: 'in_stock',
   color_family: '',
+  purchase_date: '',
+  production_date: '',
+  valid_period: '',
+  expiry_date: '',
 })
 
 const rules = {
@@ -92,6 +96,10 @@ async function init() {
         unit: detail.unit || '件',
         status: detail.status || 'in_stock',
         color_family: detail.color_family || '',
+        purchase_date: detail.purchase_date || '',
+        production_date: detail.production_date || '',
+        valid_period: detail.valid_period || '',
+        expiry_date: detail.expiry_date || '',
       })
       existingPhotos.value = detail.photos || []
       containerTree.value = []
@@ -108,6 +116,10 @@ async function init() {
         unit: '件',
         status: 'in_stock',
         color_family: '',
+        purchase_date: '',
+        production_date: '',
+        valid_period: '',
+        expiry_date: '',
       })
       containerTree.value = []
       if (form.room_id) await loadTree(form.room_id)
@@ -200,6 +212,10 @@ async function submit() {
       unit: form.unit || '件',
       status: form.status,
       color_family: form.color_family || '',
+      purchase_date: form.purchase_date || '',
+      production_date: form.production_date || '',
+      valid_period: form.valid_period || '',
+      expiry_date: form.expiry_date || '',
       tag_names: form.tag_names,
     }
     if (form.category_name) payload.category_name = form.category_name
@@ -358,6 +374,55 @@ const allPhotos = computed(() => [...existingPhotos.value, ...newPhotos.value])
                   :value="status.value"
                 />
               </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="14">
+          <el-col :xs="12" :sm="6">
+            <el-form-item label="购买日期">
+              <el-date-picker
+                v-model="form.purchase_date"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="可选"
+                clearable
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :sm="6">
+            <el-form-item label="生产日期">
+              <el-date-picker
+                v-model="form.production_date"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="可选"
+                clearable
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :sm="6">
+            <el-form-item label="有效期">
+              <el-input
+                v-model="form.valid_period"
+                placeholder="如 24个月"
+                maxlength="40"
+                clearable
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="12" :sm="6">
+            <el-form-item label="过期时间">
+              <el-date-picker
+                v-model="form.expiry_date"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="可选"
+                clearable
+                style="width: 100%"
+              />
             </el-form-item>
           </el-col>
         </el-row>

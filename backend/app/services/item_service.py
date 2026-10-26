@@ -156,6 +156,10 @@ def create_item(data: dict) -> dict:
         unit=(data.get("unit") or "件").strip() or "件",
         status=_validate_status(data.get("status")),
         color_family=(data.get("color_family") or "").strip()[:20],
+        purchase_date=(data.get("purchase_date") or "").strip()[:20],
+        production_date=(data.get("production_date") or "").strip()[:20],
+        valid_period=(data.get("valid_period") or "").strip()[:40],
+        expiry_date=(data.get("expiry_date") or "").strip()[:20],
         tags=tags,
     )
     db.session.add(item)
@@ -218,6 +222,14 @@ def update_item(item_id: int, data: dict) -> dict:
         item.status = _validate_status(data.get("status"))
     if "color_family" in data:
         item.color_family = (data.get("color_family") or "").strip()[:20]
+    for field, length in (
+        ("purchase_date", 20),
+        ("production_date", 20),
+        ("valid_period", 40),
+        ("expiry_date", 20),
+    ):
+        if field in data:
+            setattr(item, field, (data.get(field) or "").strip()[:length])
 
     if "category_id" in data:
         if data.get("category_id") is None:
